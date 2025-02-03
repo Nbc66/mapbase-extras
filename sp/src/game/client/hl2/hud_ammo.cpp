@@ -51,11 +51,13 @@ private:
 	int		m_iAmmo;
 	int		m_iAmmo2;
 	CHudTexture *m_iconPrimaryAmmo;
+	CHudTexture *m_iconAmmoGlow;
 
 	bool m_bIsWeaponFullAuto;
 	bool m_bISWeaponBurst;
 
 	float animOffset = 0.0f, xOffset = 0.0f;
+	int prevFireMode = -1;
 };
 
 DECLARE_HUDELEMENT( CHudAmmo );
@@ -151,8 +153,20 @@ void CHudAmmo::UpdatePlayerAmmo( C_BasePlayer *player )
 	// Get our icons for the ammo types
 	m_iconPrimaryAmmo = gWR.GetAmmoIconFromWeapon( wpn->GetPrimaryAmmoType() );
 
-	m_bIsWeaponFullAuto = wpn->m_nFireMode == FM_FULLAUTO;
-	m_bISWeaponBurst = wpn->m_nFireMode == FM_BURST;
+	// Get current fire mode
+	int currentFireMode = wpn->m_nFireMode;
+	m_bIsWeaponFullAuto = currentFireMode == FM_FULLAUTO;
+	m_bISWeaponBurst = currentFireMode == FM_BURST;
+
+	// Run animation only if fire mode changes
+	if (currentFireMode != prevFireMode)
+	{
+#ifdef DEBUG
+		g_pClientMode->GetViewportAnimationController()->SetAutoReloadScript(true);
+#endif // DEBUG
+		g_pClientMode->GetViewportAnimationController()->StartAnimationSequence("AmmoDecreased");
+		prevFireMode = currentFireMode; // Update previous fire mode
+	}
 
 	// get the ammo in our clip
 	int ammo1 = wpn->Clip1();

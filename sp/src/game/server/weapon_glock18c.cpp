@@ -488,6 +488,7 @@ bool CWeaponGlock18C::Reload(void)
 	if (fRet)
 	{
 		WeaponSound(RELOAD);
+		burstFire = 0;
 		m_flAccuracyPenalty = 0.0f;
 	}
 	return fRet;
