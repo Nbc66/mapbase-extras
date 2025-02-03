@@ -78,6 +78,8 @@ CBaseCombatWeapon::CBaseCombatWeapon()
 
 	m_bFlipViewModel	= false;
 
+	m_nFireMode = FM_SINGLE;
+
 #if defined( CLIENT_DLL )
 	m_iState = m_iOldState = WEAPON_NOT_CARRIED;
 	m_iClip1 = -1;
@@ -297,6 +299,8 @@ void CBaseCombatWeapon::Precache( void )
 		}
 #ifdef MAPBASE
 		m_iDroppedModelIndex = 0;
+
+		//m_nFireMode = FM_SINGLE;
 		if ( GetDroppedModel() && GetDroppedModel()[0] )
 		{
 			m_iDroppedModelIndex = CBaseEntity::PrecacheModel( GetDroppedModel() );
@@ -3031,7 +3035,9 @@ BEGIN_PREDICTION_DATA( CBaseCombatWeapon )
 	DEFINE_PRED_FIELD( m_iPrimaryAmmoType, FIELD_INTEGER, FTYPEDESC_INSENDTABLE ),
 	DEFINE_PRED_FIELD( m_iSecondaryAmmoType, FIELD_INTEGER, FTYPEDESC_INSENDTABLE ),
 	DEFINE_PRED_FIELD( m_iClip1, FIELD_INTEGER, FTYPEDESC_INSENDTABLE ),			
-	DEFINE_PRED_FIELD( m_iClip2, FIELD_INTEGER, FTYPEDESC_INSENDTABLE ),			
+	DEFINE_PRED_FIELD( m_iClip2, FIELD_INTEGER, FTYPEDESC_INSENDTABLE ),
+
+	DEFINE_PRED_FIELD( m_nFireMode, FIELD_INTEGER, FTYPEDESC_INSENDTABLE),
 
 	DEFINE_PRED_FIELD( m_nViewModelIndex, FIELD_INTEGER, FTYPEDESC_INSENDTABLE ),
 
@@ -3173,6 +3179,9 @@ BEGIN_ENT_SCRIPTDESC( CBaseCombatWeapon, CBaseAnimating, "The base class for all
 	DEFINE_SCRIPTFUNC( NextSecondaryAttack, "Returns the next time SecondaryAttack() will run when the player is pressing +ATTACK2." )
 	DEFINE_SCRIPTFUNC_SV( SetNextSecondaryAttack, "Sets the next time SecondaryAttack() will run when the player is pressing +ATTACK2." )
 
+	DEFINE_SCRIPTFUNC( IsRegisterdForImpulseCommand, "Returns a boolean to check if this weapon is registerd for the impulse 101 command")
+	DEFINE_SCRIPTFUNC_SV( RegisterForImpulseCommand, "Registers this weapon to the impulse 101 command allowing you to spawn it using \"impulse 101\"")
+
 END_SCRIPTDESC();
 #endif
 
@@ -3207,6 +3216,9 @@ BEGIN_DATADESC( CBaseCombatWeapon )
 	DEFINE_FIELD( m_iSecondaryAmmoCount, FIELD_INTEGER ),
 
 	DEFINE_FIELD( m_nViewModelIndex, FIELD_INTEGER ),
+
+	DEFINE_FIELD( m_nFireMode, FIELD_INTEGER),
+
 
 // don't save these, init to 0 and regenerate
 //	DEFINE_FIELD( m_flNextEmptySoundTime, FIELD_TIME ),
@@ -3395,6 +3407,8 @@ BEGIN_NETWORK_TABLE_NOBASE( CBaseCombatWeapon, DT_LocalWeaponData )
 	SendPropInt( SENDINFO(m_iPrimaryAmmoType ), 8 ),
 	SendPropInt( SENDINFO(m_iSecondaryAmmoType ), 8 ),
 
+	SendPropInt(SENDINFO(m_nFireMode)),
+
 	SendPropInt( SENDINFO( m_nViewModelIndex ), VIEWMODEL_INDEX_BITS, SPROP_UNSIGNED ),
 
 	SendPropInt( SENDINFO( m_bFlipViewModel ) ),
@@ -3408,6 +3422,8 @@ BEGIN_NETWORK_TABLE_NOBASE( CBaseCombatWeapon, DT_LocalWeaponData )
 	RecvPropIntWithMinusOneFlag( RECVINFO(m_iClip2 )),
 	RecvPropInt( RECVINFO(m_iPrimaryAmmoType )),
 	RecvPropInt( RECVINFO(m_iSecondaryAmmoType )),
+
+	RecvPropInt(RECVINFO(m_nFireMode)),
 
 	RecvPropInt( RECVINFO( m_nViewModelIndex ) ),
 
