@@ -6557,6 +6557,11 @@ void CBasePlayer::CheatImpulseCommands( int iImpulse )
 		{
 			TakeHealth( 25, DMG_GENERIC );
 		}
+
+		for (int i = 0; i < g_vecWeaponList.Count(); i++)
+		{
+			GiveNamedItem(g_vecWeaponList[i]);
+		}
 		
 		gEvilImpulse101		= false;
 

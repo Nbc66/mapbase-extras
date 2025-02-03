@@ -23,6 +23,14 @@
 #define CBaseCombatWeapon C_BaseCombatWeapon
 #endif
 
+enum Weapon_fire_modes
+{
+	FM_SINGLE = 0,
+	FM_BURST,
+	FM_FULLAUTO,
+	FM_MAX_FIREMODE
+};
+
 // Hacky
 #if defined ( TF_CLIENT_DLL ) || defined ( TF_DLL )
 #include "econ_entity.h"
@@ -504,6 +512,8 @@ public:
 	void				SetNextPrimaryAttack( float flVal ) { m_flNextPrimaryAttack = flVal; }
 	float				NextSecondaryAttack() { return m_flNextSecondaryAttack; }
 	void				SetNextSecondaryAttack( float flVal ) { m_flNextSecondaryAttack = flVal; }
+	void				RegisterForImpulseCommand(bool bVal = true) { m_bRegisterForImpulse = bVal; }
+	bool				IsRegisterdForImpulseCommand() { return m_bRegisterForImpulse; }
 #endif
 
 public:
@@ -686,6 +696,10 @@ public:
 	CNetworkVar( int, m_iWorldModelIndex );
 #ifdef MAPBASE
 	CNetworkVar( int, m_iDroppedModelIndex );
+
+	CNetworkVar( int, m_nFireMode );
+
+	bool	m_bRegisterForImpulse = false;
 #endif
 	// Sounds
 	float					m_flNextEmptySoundTime;				// delay on empty sound playing

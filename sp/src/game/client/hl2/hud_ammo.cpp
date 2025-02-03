@@ -51,6 +51,11 @@ private:
 	int		m_iAmmo;
 	int		m_iAmmo2;
 	CHudTexture *m_iconPrimaryAmmo;
+
+	bool m_bIsWeaponFullAuto;
+	bool m_bISWeaponBurst;
+
+	float animOffset = 0.0f, xOffset = 0.0f;
 };
 
 DECLARE_HUDELEMENT( CHudAmmo );
@@ -107,6 +112,12 @@ void CHudAmmo::Reset()
 	m_hCurrentVehicle = NULL;
 	m_iAmmo = 0;
 	m_iAmmo2 = 0;
+	
+	m_bISWeaponBurst = false;
+	m_bIsWeaponFullAuto = false;
+
+	animOffset = 0;
+	xOffset = 0;
 
 	UpdateAmmoDisplays();
 }
@@ -139,6 +150,9 @@ void CHudAmmo::UpdatePlayerAmmo( C_BasePlayer *player )
 
 	// Get our icons for the ammo types
 	m_iconPrimaryAmmo = gWR.GetAmmoIconFromWeapon( wpn->GetPrimaryAmmoType() );
+
+	m_bIsWeaponFullAuto = wpn->m_nFireMode == FM_FULLAUTO;
+	m_bISWeaponBurst = wpn->m_nFireMode == FM_BURST;
 
 	// get the ammo in our clip
 	int ammo1 = wpn->Clip1();
@@ -336,17 +350,93 @@ void CHudAmmo::Paint( void )
 	BaseClass::Paint();
 
 #ifndef HL2MP
-	if ( m_hCurrentVehicle == NULL && m_iconPrimaryAmmo )
+	if (m_hCurrentVehicle == NULL && m_iconPrimaryAmmo)
 	{
 		int nLabelHeight;
 		int nLabelWidth;
-		surface()->GetTextSize( m_hTextFont, m_LabelText, nLabelWidth, nLabelHeight );
+		surface()->GetTextSize(m_hTextFont, m_LabelText, nLabelWidth, nLabelHeight);
 
 		// Figure out where we're going to put this
-		int x = text_xpos + ( nLabelWidth - m_iconPrimaryAmmo->Width() ) / 2;
-		int y = text_ypos - ( nLabelHeight + ( m_iconPrimaryAmmo->Height() / 2 ) );
-		
-		m_iconPrimaryAmmo->DrawSelf( x, y, GetFgColor() );
+		int x = text_xpos + (nLabelWidth - m_iconPrimaryAmmo->Width()) / 2;
+		int y = text_ypos - (nLabelHeight + (m_iconPrimaryAmmo->Height() / 2));
+
+		m_iconPrimaryAmmo->DrawSelf(x, y, GetFgColor());
+
+#define MAX_PIXEL_OFFSET 15.0f
+
+		if (m_bIsWeaponFullAuto || m_bISWeaponBurst || animOffset > 0.0f || xOffset > 0.0f)
+		{
+			float speed = gpGlobals->frametime * 150.0f;
+			float xSpeed = speed * 0.5f; // X moves at half speed
+
+			// Handling Full Auto Mode
+			if (m_bIsWeaponFullAuto)
+			{
+				// If switching from burst mode, immediately start moving X (Y is already done)
+				if (m_bISWeaponBurst && xOffset == 0.0f)
+				{
+					xOffset = 15.0f;  // Start moving X by 15px immediately when switching to full auto
+				}
+
+				// If switching from single to full auto, start moving Y first
+				if (!m_bISWeaponBurst && animOffset < MAX_PIXEL_OFFSET)
+				{
+					animOffset += speed;
+					if (animOffset >= MAX_PIXEL_OFFSET)
+					{
+						animOffset = MAX_PIXEL_OFFSET; // Y finished moving
+					}
+				}
+
+				// After Y has finished, move X
+				if (animOffset >= MAX_PIXEL_OFFSET && xOffset < MAX_PIXEL_OFFSET / 2)
+				{
+					xOffset += xSpeed;
+					if (xOffset >= MAX_PIXEL_OFFSET / 2)
+						xOffset = MAX_PIXEL_OFFSET / 2;
+				}
+			}
+			// Handling Burst Mode (Only Y moves, X stays at zero)
+			else if (m_bISWeaponBurst)
+			{
+				// Burst mode: Only move Y
+				if (animOffset < MAX_PIXEL_OFFSET)
+				{
+					animOffset += speed * 2.0f;
+					if (animOffset >= MAX_PIXEL_OFFSET)
+						animOffset = MAX_PIXEL_OFFSET;
+				}
+
+				// Ensure X stays at zero
+				xOffset = 0.0f;
+			}
+			// Handling Single Fire (Reverse order)
+			else
+			{
+				// Move X back first at half speed
+				if (xOffset > 0.0f)
+				{
+					xOffset -= xSpeed;
+					if (xOffset <= 0.0f)
+					{
+						xOffset = 0.0f;
+					}
+				}
+
+				// Move Y back after X is done
+				if (xOffset <= 0.0f && animOffset > 0.0f)
+				{
+					animOffset -= speed;
+					if (animOffset <= 0.0f)
+						animOffset = 0.0f;
+				}
+			}
+
+			// Draw the icons with both X and Y offsets
+			m_iconPrimaryAmmo->DrawSelf(x + xOffset, y - animOffset, GetFgColor());
+			m_iconPrimaryAmmo->DrawSelf(x - xOffset, y + animOffset, GetFgColor());
+		}
+
 	}
 #endif // HL2MP
 }

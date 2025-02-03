@@ -43,6 +43,11 @@ class IEntityFactory;
 	#define SETUP_EXTERNC(mapClassName)
 #endif
 
+#ifdef MAPBASE
+extern CUtlVector<const char*> g_vecWeaponList;
+#endif // MAPBASE
+
+
 //
 // How did I ever live without ASSERT?
 //
