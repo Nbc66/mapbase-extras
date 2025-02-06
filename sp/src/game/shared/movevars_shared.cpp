@@ -157,30 +157,7 @@ bool CallR_LoadNamedSkys(const char* skyname)
 
     const char mask[] = "xxxxx????xx????xxxxxxx";  // No wildcards, as the pattern seems fixed
 
-    //const unsigned char pattern_2[] = {
-    //0x55, 0x8B, 0xEC,
-    //0x81, 0xEC, 0x88, 0x00, 0x00, 0x00,
-    //0x8D, 0x4D, 0xF8,
-    //0x68, 0x00, 0x00, 0x00, 0x00,  // Address of "sv_skyname" (unknown)
-    //0xE8, 0x00, 0x00, 0x00, 0x00,  // Call instruction (unknown offset)
-    //0x8D, 0x4D, 0xF8,
-    //0xE8, 0x00, 0x00, 0x00, 0x00,  // Another call or instruction (unknown)
-    //0x84
-    //};
-    //
-    //const char mask_2[] = "xxxxxxxxxxxxx????x????xxxx????x";
-    //
-    //
-    //uintptr_t LoadFunc = FindPattern(baseAddress, moduleSize, pattern_2, mask_2);
-    //
-    //if (LoadFunc)
-    //{
-    //    DevMsg("Found R_LoadSky at 0x%p\n", (void*)LoadFunc);
-    //    R_LoadSkysFn R_LoadSkys = (R_LoadSkysFn)LoadFunc;
-    //    R_LoadSkys();  // Call the function
-    //}
-    //
-    //// Find the function address
+    // Find the function address
     uintptr_t skyboxFunc = FindPattern(baseAddress, moduleSize, pattern, mask);
 
 
