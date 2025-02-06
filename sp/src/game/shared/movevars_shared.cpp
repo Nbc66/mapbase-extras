@@ -110,7 +110,7 @@ ConVar	sv_backspeed	( "sv_backspeed", "0.6", FCVAR_ARCHIVE | FCVAR_REPLICATED | 
 ConVar  sv_waterdist	( "sv_waterdist","12", FCVAR_REPLICATED | FCVAR_DEVELOPMENTONLY, "Vertical view fixup when eyes are near water plane." );
 #endif // CSTRIKE_DLL
 
-#ifdef MAPBASE
+#if defined(MAPBASE) && defined(_WIN32)
 uintptr_t FindPattern(uintptr_t base, size_t size, const unsigned char* pattern, const char* mask)
 {
     size_t patternLen = strlen(mask);
