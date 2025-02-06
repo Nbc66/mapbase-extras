@@ -8,6 +8,14 @@
 #include "cbase.h"
 #include "movevars_shared.h"
 
+#ifdef MAPBASE
+
+#include "winlite.h"
+#include <Psapi.h>
+#undef CreateEvent
+#endif // MAPBASE
+
+
 #if defined( TF_CLIENT_DLL ) || defined( TF_DLL )
 #include "tf_gamerules.h"
 #endif
@@ -102,7 +110,105 @@ ConVar	sv_backspeed	( "sv_backspeed", "0.6", FCVAR_ARCHIVE | FCVAR_REPLICATED | 
 ConVar  sv_waterdist	( "sv_waterdist","12", FCVAR_REPLICATED | FCVAR_DEVELOPMENTONLY, "Vertical view fixup when eyes are near water plane." );
 #endif // CSTRIKE_DLL
 
-ConVar	sv_skyname		( "sv_skyname", "sky_urb01", FCVAR_ARCHIVE | FCVAR_REPLICATED, "Current name of the skybox texture" );
+#ifdef MAPBASE
+uintptr_t FindPattern(uintptr_t base, size_t size, const unsigned char* pattern, const char* mask)
+{
+    size_t patternLen = strlen(mask);
+
+    for (size_t i = 0; i < size - patternLen; i++)
+    {
+        bool found = true;
+        for (size_t j = 0; j < patternLen; j++)
+        {
+            // If the mask byte is not '?', check for exact byte match
+            if (mask[j] != '?' && pattern[j] != *(unsigned char*)(base + i + j))
+            {
+                found = false;
+                break;
+            }
+            // If the mask byte is '?', skip the byte comparison
+        }
+        if (found)
+            return base + i; // Found the address
+    }
+    return 0; // Not found
+}
+
+typedef bool (*R_LoadNamedSkys_t)(const char* skyname);
+typedef void (*R_LoadSkysFn)();
+
+bool CallR_LoadNamedSkys(const char* skyname)
+{
+    MODULEINFO modinfo = { 0 };
+    HMODULE module = GetModuleHandle("engine.dll");
+    if (!module)
+        return false;
+
+    // Get module info
+    GetModuleInformation(GetCurrentProcess(), module, &modinfo, sizeof(modinfo));
+    uintptr_t baseAddress = (uintptr_t)modinfo.lpBaseOfDll;
+    size_t moduleSize = (size_t)modinfo.SizeOfImage;
+
+    // Define the pattern for the function
+    const unsigned char pattern[] = {
+        0x55, 0x8B, 0xEC, 0x81, 0xEC, 0x00, 0x00, 0x00, 0x00, 0x8B, 0x0D, 0x00, 0x00, 0x00, 0x00,
+        0x53, 0x56, 0x57, 0x8B, 0x01, 0xC7, 0x45
+    };
+
+    const char mask[] = "xxxxx????xx????xxxxxxx";  // No wildcards, as the pattern seems fixed
+
+    //const unsigned char pattern_2[] = {
+    //0x55, 0x8B, 0xEC,
+    //0x81, 0xEC, 0x88, 0x00, 0x00, 0x00,
+    //0x8D, 0x4D, 0xF8,
+    //0x68, 0x00, 0x00, 0x00, 0x00,  // Address of "sv_skyname" (unknown)
+    //0xE8, 0x00, 0x00, 0x00, 0x00,  // Call instruction (unknown offset)
+    //0x8D, 0x4D, 0xF8,
+    //0xE8, 0x00, 0x00, 0x00, 0x00,  // Another call or instruction (unknown)
+    //0x84
+    //};
+    //
+    //const char mask_2[] = "xxxxxxxxxxxxx????x????xxxx????x";
+    //
+    //
+    //uintptr_t LoadFunc = FindPattern(baseAddress, moduleSize, pattern_2, mask_2);
+    //
+    //if (LoadFunc)
+    //{
+    //    DevMsg("Found R_LoadSky at 0x%p\n", (void*)LoadFunc);
+    //    R_LoadSkysFn R_LoadSkys = (R_LoadSkysFn)LoadFunc;
+    //    R_LoadSkys();  // Call the function
+    //}
+    //
+    //// Find the function address
+    uintptr_t skyboxFunc = FindPattern(baseAddress, moduleSize, pattern, mask);
+
+
+    if (skyboxFunc)
+    {
+        DevMsg("Found R_LoadNamedSkys at 0x%p\n", (void*)skyboxFunc);
+        R_LoadNamedSkys_t R_LoadNamedSkys_ptr = (R_LoadNamedSkys_t)skyboxFunc;
+
+        R_LoadNamedSkys_ptr(skyname);
+    }
+    else
+    {
+        DevMsg("R_LoadNamedSkys not found\n");
+        return false;
+    }
+
+    return true;
+}
+
+void change_skybox(IConVar* var, const char* pOldValue, float flOldValue)
+{
+    CallR_LoadNamedSkys(((ConVar*)var)->GetString());
+}
+
+ConVar	sv_skyname		( "sv_skyname", "sky_urb01", FCVAR_ARCHIVE | FCVAR_REPLICATED, "Current name of the skybox texture", change_skybox);
+#else
+ConVar	sv_skyname("sv_skyname", "sky_urb01", FCVAR_ARCHIVE | FCVAR_REPLICATED, "Current name of the skybox texture");
+#endif
 
 // Vehicle convars
 ConVar r_VehicleViewDampen( "r_VehicleViewDampen", "1", FCVAR_CHEAT | FCVAR_NOTIFY | FCVAR_REPLICATED );
