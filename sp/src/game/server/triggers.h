@@ -357,25 +357,15 @@ private:
 };
 
 #ifdef MAPBASE
-class CMapBaseBaseTrigger : public CBaseTrigger
-{
-	DECLARE_CLASS(CMapBaseBaseTrigger, CBaseTrigger);
-public:
-	void Spawn();
-
-private:
-
-};
-
 //--------- CTriggerUserInput -------------------------------------------------------------------
 //
 // Ported from Momentum Mod
 // https://github.com/momentum-mod/game/blob/2e490c7e722788ade7221ba7ba5d4d503d60a115/mp/src/game/server/momentum/mom_triggers.cpp#L1200
 //
 //-----------------------------------------------------------------------------------------------
-class CTriggerUserInput : public CMapBaseBaseTrigger
+class CTriggerUserInput : public CBaseTrigger
 {
-	DECLARE_CLASS(CTriggerUserInput, CMapBaseBaseTrigger);
+	DECLARE_CLASS(CTriggerUserInput, CBaseTrigger);
 public:
 	CTriggerUserInput();
 	void Spawn();

@@ -5680,15 +5680,6 @@ bool IsTriggerClass( CBaseEntity *pEntity )
 }
 
 #ifdef MAPBASE
-//Doing This so that whenever you create a new trigger it will init
-//Withouth needing call InitTrigger();
-void CMapBaseBaseTrigger::Spawn()
-{
-	BaseClass::Spawn();
-	BaseClass::InitTrigger();
-}
-
-
 LINK_ENTITY_TO_CLASS(trigger_userinput, CTriggerUserInput);
 
 BEGIN_DATADESC(CTriggerUserInput)
@@ -5742,6 +5733,7 @@ void CTriggerUserInput::Spawn()
 	}
 
 	BaseClass::Spawn();
+	BaseClass::InitTrigger();
 }
 
 void CTriggerUserInput::Touch(CBaseEntity* pOther)
