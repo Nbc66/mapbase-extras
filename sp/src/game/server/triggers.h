@@ -356,4 +356,52 @@ private:
 #endif
 };
 
+#ifdef MAPBASE
+class CMapBaseBaseTrigger : public CBaseTrigger
+{
+	DECLARE_CLASS(CMapBaseBaseTrigger, CBaseTrigger);
+public:
+	void Spawn();
+
+private:
+
+};
+
+//--------- CTriggerUserInput -------------------------------------------------------------------
+//
+// Ported from Momentum Mod
+// https://github.com/momentum-mod/game/blob/2e490c7e722788ade7221ba7ba5d4d503d60a115/mp/src/game/server/momentum/mom_triggers.cpp#L1200
+//
+//-----------------------------------------------------------------------------------------------
+class CTriggerUserInput : public CMapBaseBaseTrigger
+{
+	DECLARE_CLASS(CTriggerUserInput, CMapBaseBaseTrigger);
+public:
+	CTriggerUserInput();
+	void Spawn();
+	void Touch(CBaseEntity* pOther);
+	DECLARE_DATADESC();
+
+private:
+	enum Key
+	{
+		KEY_FORWARD = 0,
+		KEY_BACK,
+		KEY_MOVELEFT,
+		KEY_MOVERIGHT,
+		KEY_JUMP,
+		KEY_DUCK,
+		KEY_ATTACK,
+		KEY_ATTACK2,
+		KEY_RELOAD
+	};
+	int m_ButtonRep;
+	Key m_eKey;
+	COutputEvent m_OnKeyPressed;
+	COutputEvent m_OnKeyHeld;
+	COutputEvent m_OnKeyReleased;
+};
+#endif // MAPBASE
+
+
 #endif // TRIGGERS_H
