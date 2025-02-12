@@ -21,7 +21,7 @@ $Configuration
 
 	$Linker [$WIN32]
 	{
-		$EnableLargeAddresses				"Support Addresses Larger Than 2 Gigabytes (/LARGEADDRESSAWARE)"
+		$EnableLargeAddresses				"Yes (/LARGEADDRESSAWARE)"
 	}
 }
 
