@@ -1,12 +1,10 @@
 #ifndef MODULAR_WEAPON_BASE_H
 #define MODULAR_WEAPON_BASE_H
-#include "cbase.h"
+#ifdef _WIN32
+#pragma once
+#endif
 #include "basehlcombatweapon_shared.h"
-
-#ifdef CLIENT_DLL
-#define CBaseModularWeapon C_BaseModularWeapon
-#define CBaseWeaponAttachment C_BaseAttachment
-#endif // CLIENT_DLL
+#include "baseattachment.h"
 
 enum AttachmentType_t
 {
@@ -20,33 +18,23 @@ enum AttachmentType_t
     ATTACHMENT_BARREL,       // Modifies bullet spread
 };
 
-class CBaseWeaponAttachment : public CBaseEntity
-{
-
-    DECLARE_CLASS(CBaseWeaponAttachment, CBaseEntity)
-
-public:
-    CBaseWeaponAttachment();
-    ~CBaseWeaponAttachment();
-
-private:
-
-};
-
-CBaseWeaponAttachment::CBaseWeaponAttachment()
-{
-}
-
-CBaseWeaponAttachment::~CBaseWeaponAttachment()
-{
-}
+#if defined( CLIENT_DLL )
+#define CBaseModularWeapon C_BaseModularWeapon
+#endif // CLIENT_DLL
 
 class CBaseModularWeapon : public CBaseHLCombatWeapon
 {
 
-	DECLARE_CLASS(CBaseModularWeapon, CBaseHLCombatWeapon)
+#ifndef CLIENT_DLL
+    DECLARE_DATADESC();
+#endif // !CLIENT_DLL
+
+	DECLARE_CLASS( CBaseModularWeapon, CBaseHLCombatWeapon )
 
 public:
+    DECLARE_NETWORKCLASS();
+    DECLARE_PREDICTABLE();
+
 	CBaseModularWeapon();
     virtual void EquipAttachment(CBaseWeaponAttachment* pAttachment);
     virtual void RemoveAttachment(AttachmentType_t type);
@@ -66,14 +54,5 @@ private:
 
     CUtlMap<AttachmentType_t, CBaseWeaponAttachment*> m_Attachments;
 };
-
-CBaseModularWeapon::CBaseModularWeapon()
-{
-}
-
-CBaseModularWeapon::~CBaseModularWeapon()
-{
-}
-
 
 #endif // !MODULAR_WEAPON_BASE_H
