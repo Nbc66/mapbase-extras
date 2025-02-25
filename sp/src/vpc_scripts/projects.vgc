@@ -17,6 +17,7 @@ $Project "client"
 {
 	"game\client\client_hl2.vpc"		[($WIN32||$X360||$POSIX) && $HL2]
 	"game\client\client_episodic.vpc"	[($WIN32||$X360||$POSIX) && $EPISODIC]
+	"game\client\client_fracture.vpc" 	[($WIN32||$POSIX) && $FP]
 }
 
 $Project "fgdlib"
@@ -27,7 +28,7 @@ $Project "fgdlib"
 $Project "game_shader_dx9"
 {
 	"materialsystem\stdshaders\game_shader_dx9_hl2.vpc" [$HL2]
-	"materialsystem\stdshaders\game_shader_dx9_episodic.vpc"  [$EPISODIC]
+	"materialsystem\stdshaders\game_shader_dx9_episodic.vpc"  [$EPISODIC || $FP]
 }
 
 $Project "glview"
@@ -44,6 +45,7 @@ $Project "server"
 {
 	"game\server\server_hl2.vpc"		[($WIN32||$X360||$POSIX) && $HL2]
 	"game\server\server_episodic.vpc"	[($WIN32||$X360||$POSIX) && $EPISODIC]
+	"game\server\server_fracture.vpc" 	[($WIN32||$POSIX) && $FP]
 }
 
 $Project "responserules"
