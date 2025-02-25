@@ -28,7 +28,7 @@ on:
         type: string
       game:
         description: 'The name of the game to build (if relevant)'
-        default: 'episodic'
+        default: 'fp'
         required: false
         type: string
       project-group:
