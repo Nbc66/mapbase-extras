@@ -36,6 +36,7 @@ public:
     DECLARE_PREDICTABLE();
 
 	CBaseModularWeapon();
+    virtual ~CBaseModularWeapon();
     virtual void EquipAttachment(CBaseWeaponAttachment* pAttachment);
     virtual void RemoveAttachment(AttachmentType_t type);
 
