@@ -1,0 +1,3 @@
+[submodule "sp/game/fracture_point"]
+	path = sp/game/fracture_point
+	url = git@github.com:Nbc66/fracture_point_game.git
