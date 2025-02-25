@@ -15,7 +15,7 @@ name: Build All Projects #(SP Release)
 on:
   pull_request:
     branches:
-      - master
+      - fracture_main
 
 jobs:
   everything:
