@@ -57,14 +57,20 @@ $Project "Server (Fracture Point)"
 				$File "$SRCDIR\game\shared\modular_weapons\basemodularweapon.h"
 				$File "$SRCDIR\game\shared\modular_weapons\baseattachment.h"
 				$File "$SRCDIR\game\shared\modular_weapons\baseattachment.cpp"
-                // ??
-                $File	"episodic\weapon_glock18c.cpp"
+			}
+			
+			$Folder "Weapons"
+			{
+			    $File	"episodic\weapon_glock18c.cpp"
                 $File	"episodic\weapon_glock18c.h"
 			}
 		}
 
 		$Folder	"HL2 DLL"
 		{
+			
+			$File	"weapon_pistol.h"
+		
 			$File	"$SRCDIR\game\shared\episodic\achievements_ep1.cpp"
 			$File	"$SRCDIR\game\shared\episodic\achievements_ep2.cpp"
 			$File	"$SRCDIR\game\shared\episodic\achievements_epx.cpp"
