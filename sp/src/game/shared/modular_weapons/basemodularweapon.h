@@ -43,4 +43,11 @@ private:
     CUtlMap<AttachmentType_t, CBaseWeaponAttachment*> m_Attachments;
 };
 
+inline CBaseModularWeapon* ToModularWeapon(CBaseEntity* pEntity)
+{
+    if (!pEntity || !pEntity->IsBaseCombatWeapon())
+        return NULL;
+    return dynamic_cast<CBaseModularWeapon*>(pEntity);
+}
+
 #endif // !MODULAR_WEAPON_BASE_H

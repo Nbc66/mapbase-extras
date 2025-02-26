@@ -32,6 +32,10 @@
 #include "tf_gamerules.h"
 #endif
 
+#ifdef FP
+#include "fracture_point/UI/attachment_ui.h"
+#endif
+
 using namespace vgui;
 
 void MP3Player_Create( vgui::VPANEL parent );
@@ -205,6 +209,11 @@ void VGui_CreateGlobalPanels( void )
 	loadingdisc->Create( gameToolParent );
 	messagechars->Create( gameToolParent );
 
+#ifdef FP
+	VPANEL gameParent = enginevgui->GetPanel(PANEL_INGAMESCREENS);
+	AttachmentUI->Create(gameParent);
+#endif
+
 	// Debugging or related tool
 	fps->Create( toolParent );
 #if defined( TRACK_BLOCKING_IO )
@@ -240,6 +249,10 @@ void VGui_Shutdown()
 	messagechars->Destroy();
 	loadingdisc->Destroy();
 	internalCenterPrint->Destroy();
+
+#ifdef FP
+	AttachmentUI->Destroy();
+#endif
 
 	if ( g_pClientMode )
 	{

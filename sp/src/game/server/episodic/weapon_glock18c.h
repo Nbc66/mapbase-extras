@@ -1,15 +1,15 @@
 #ifndef WEAPON_GLOCK18C_H
 #define WEAPON_GLOCK18C_H
 #include "cbase.h"
-#include "basehlcombatweapon.h"
 #include "weapon_pistol.h"
 
+#include "basemodularweapon.h"
 
-class CWeaponGlock18C : public CBaseHLCombatWeapon
+class CWeaponGlock18C : public CBaseModularWeapon
 {
 	DECLARE_DATADESC();
 public:
-	DECLARE_CLASS(CWeaponGlock18C, CBaseHLCombatWeapon)
+	DECLARE_CLASS(CWeaponGlock18C, CBaseModularWeapon)
 
 	CWeaponGlock18C(void);
 
