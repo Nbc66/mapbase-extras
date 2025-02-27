@@ -14,6 +14,10 @@
 #include "iinput.h"
 #include "ienginevgui.h"
 
+#ifdef FP
+#include "fracture_point/UI/attachment_ui.h"
+#endif
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -53,8 +57,20 @@ protected:
 		SetPaintBackgroundEnabled( false );
 	}
 
+#ifdef FP
+	virtual void CreateDefaultPanels(void);
+#else
 	virtual void CreateDefaultPanels( void ) { /* don't create any panels yet*/ };
+#endif
 };
+
+#ifdef FP
+// fucking bitch
+void CHudViewport::CreateDefaultPanels(void)
+{
+	AddNewPanel(CreatePanelByName(PANEL_ATTACHMENT_UI), "PANEL_ATTACHMENT_UI");
+}
+#endif
 
 
 //-----------------------------------------------------------------------------

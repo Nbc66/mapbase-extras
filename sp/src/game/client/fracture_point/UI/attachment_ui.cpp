@@ -3,11 +3,6 @@
 
 using namespace vgui; // >:(
 
-#include <vgui/IVGui.h>
-#include <vgui_controls/Frame.h>
-#include <vgui_controls/SectionedListPanel.h>
-#include <vgui_controls/Button.h>
-
 Vector2D WorldToScreen(const Vector& worldPos)
 {
     const VMatrix& w2s = engine->WorldToScreenMatrix();
@@ -35,42 +30,66 @@ Vector2D WorldToScreen(const Vector& worldPos)
     return Vector2D(screenX, screenY);
 }
 
-class CAttachmentUI : public vgui::Frame
+CON_COMMAND(showattachment, "ditto")
 {
-    DECLARE_CLASS_SIMPLE(CAttachmentUI, vgui::Frame);
-    CAttachmentUI(vgui::VPANEL parent);
+    if (!gViewPortInterface)
+        return;
 
-private:
-    Button* Test;
-};
+    IViewPortPanel* panel = gViewPortInterface->FindPanelByName(PANEL_ATTACHMENT_UI);
 
-CAttachmentUI::CAttachmentUI(vgui::VPANEL parent) : BaseClass(NULL, "AttachmentUI")
+    if (panel)
+    {
+        gViewPortInterface->ShowPanel(panel, true);
+    }
+    else
+    {
+        Msg("Couldn't find PANEL_ATTACHMENT_UI panel.\n");
+    }
+}
+
+CAttachmentUI::CAttachmentUI(IViewPort* pViewPort) : Frame(NULL, PANEL_ATTACHMENT_UI)
 {
-    SetParent(parent);
+    m_pViewPort = pViewPort;
+
     SetSize(320, 320);
     SetVisible(true);
     Test = new Button(this, "Test", "Test");
+
+    m_pViewPort->ShowPanel(this, true);
+
+    DevMsg("Attachment UI is here\n");
 }
 
-class CAttachmentUIInterface : public IAttachmentUI
+void CAttachmentUI::Update(void)
 {
-private:
-    CAttachmentUI* AttachmentUI;
-public:
-    CAttachmentUIInterface() { AttachmentUI = NULL; }
-    void Create(vgui::VPANEL parent)
-    {
-        AttachmentUI = new CAttachmentUI(parent);
-    }
-    void Destroy()
-    {
-        if (AttachmentUI)
-        {
-            AttachmentUI->SetParent((vgui::Panel*)NULL);
-            delete AttachmentUI;
-        }
-    }
-};
+    // Resolution
+}
 
-static CAttachmentUIInterface g_AttachmentUI;
-IAttachmentUI* AttachmentUI = (IAttachmentUI*)&g_AttachmentUI;
+void CAttachmentUI::SetData(KeyValues* data)
+{
+    // TODO
+}
+
+void CAttachmentUI::Reset(void)
+{
+    // TODO
+}
+
+void CAttachmentUI::ShowPanel(bool bShow)
+{
+    if (BaseClass::IsVisible() == bShow)
+        return;
+
+    m_pViewPort->ShowBackGround(bShow);
+
+    if (bShow)
+    {
+        Activate();
+        SetMouseInputEnabled(true);
+    }
+    else
+    {
+        SetVisible(false);
+        SetMouseInputEnabled(false);
+    }
+}
