@@ -64,6 +64,11 @@ CAttachmentUI::CAttachmentUI(IViewPort* pViewPort) : Frame(NULL, PANEL_ATTACHMEN
 
 void CAttachmentUI::Update(void)
 {
+    
+}
+
+void CAttachmentUI::OnThink(void)
+{
     // Resolution
     int screenWidth, screenHeight;
     engine->GetScreenSize(screenWidth, screenHeight);

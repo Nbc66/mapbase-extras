@@ -30,10 +30,10 @@ public:
 	vgui::VPANEL GetVPanel(void) { return BaseClass::GetVPanel(); }
 	virtual bool IsVisible() { return BaseClass::IsVisible(); }
 	virtual void SetParent(vgui::VPANEL parent) { BaseClass::SetParent(parent); }
-
-	virtual void CAttachmentUI::OnCommand(const char* command);
-
 private:
+	virtual void OnCommand(const char* command);
+	virtual void OnThink();
+
 	vgui::Button* Test;
 
 protected:
