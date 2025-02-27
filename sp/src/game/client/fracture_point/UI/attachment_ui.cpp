@@ -50,12 +50,14 @@ CON_COMMAND(showattachment, "ditto")
 CAttachmentUI::CAttachmentUI(IViewPort* pViewPort) : Frame(NULL, PANEL_ATTACHMENT_UI)
 {
     m_pViewPort = pViewPort;
+    SetMoveable(false);
+    SetSizeable(false);
+    SetTitleBarVisible(false);
 
-    SetSize(320, 320);
-    SetVisible(true);
-    Test = new Button(this, "Test", "Test");
+    Test = new Button(this, "TestBtn", "Test");
+    Test->SetCommand("okay");
 
-    m_pViewPort->ShowPanel(this, true);
+    //m_pViewPort->ShowPanel(this, true);
 
     DevMsg("Attachment UI is here\n");
 }
@@ -63,6 +65,14 @@ CAttachmentUI::CAttachmentUI(IViewPort* pViewPort) : Frame(NULL, PANEL_ATTACHMEN
 void CAttachmentUI::Update(void)
 {
     // Resolution
+    int screenWidth, screenHeight;
+    engine->GetScreenSize(screenWidth, screenHeight);
+    SetSize(screenWidth, screenHeight);
+    SetPos(0, 0);
+
+    // Small Test
+    Vector2D ButtonPos = WorldToScreen(Vector(0, 0, 0));
+    Test->SetPos(ButtonPos.x, ButtonPos.y);
 }
 
 void CAttachmentUI::SetData(KeyValues* data)
@@ -92,4 +102,14 @@ void CAttachmentUI::ShowPanel(bool bShow)
         SetVisible(false);
         SetMouseInputEnabled(false);
     }
+}
+
+void CAttachmentUI::OnCommand(const char* command)
+{
+    if (!Q_strcmp(command, "okay"))
+    {
+        // Do things
+        ShowPanel(false);
+    }
+    BaseClass::OnCommand(command);
 }

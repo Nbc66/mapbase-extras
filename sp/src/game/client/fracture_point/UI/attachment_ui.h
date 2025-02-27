@@ -31,6 +31,8 @@ public:
 	virtual bool IsVisible() { return BaseClass::IsVisible(); }
 	virtual void SetParent(vgui::VPANEL parent) { BaseClass::SetParent(parent); }
 
+	virtual void CAttachmentUI::OnCommand(const char* command);
+
 private:
 	vgui::Button* Test;
 
