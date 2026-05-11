@@ -12,6 +12,7 @@ on:
   pull_request:
     branches:
       - develop
+      - fracture_main
     paths:
       - '.github/workflows/mapbase_build-base.yml'
       - '.github/workflows/mapbase_build-sp-rel-games.yml'

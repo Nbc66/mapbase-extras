@@ -56,6 +56,10 @@
 #include "replay/ienginereplay.h"
 #endif
 
+#ifdef FP
+#include "fracture_point/UI/attachment_ui.h"
+#endif
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -260,6 +264,9 @@ void CBaseViewport::CreateDefaultPanels( void )
 	// AddNewPanel( CreatePanelByName( PANEL_TEAM ), "PANEL_TEAM" );
 	// AddNewPanel( CreatePanelByName( PANEL_CLASS ), "PANEL_CLASS" );
 	// AddNewPanel( CreatePanelByName( PANEL_BUY ), "PANEL_BUY" );
+//#ifdef FP
+//	AddNewPanel(CreatePanelByName(PANEL_ATTACHMENT_UI), "PANEL_ATTACHMENT_UI");
+//#endif
 #endif
 }
 
@@ -308,6 +315,12 @@ IViewPortPanel* CBaseViewport::CreatePanelByName(const char *szPanelName)
 	{
 		newpanel = new CSpectatorGUI( this );
 	}
+#ifdef FP
+	else if (Q_strcmp(PANEL_ATTACHMENT_UI, szPanelName) == 0)
+	{
+		newpanel = new CAttachmentUI(this);
+	}
+#endif
 #if !defined( TF_CLIENT_DLL )
 	else if ( Q_strcmp(PANEL_NAV_PROGRESS, szPanelName) == 0 )
 	{

@@ -13,9 +13,12 @@
 name: Build All Projects #(SP Release)
 
 on:
+  push:
+    branches:
+      - fracture_main
   pull_request:
     branches:
-      - master
+      - fracture_main
 
 jobs:
   everything:
@@ -26,6 +29,7 @@ jobs:
     with:
       configuration: ${{ matrix.configuration }}
       branch: 'sp'
-      project-group: 'all'
-      solution-name: 'everything'
+      project-group: 'game'
+      solution-name: 'games'
+      game: 'fp'
       build-on-linux: true # Disable this if you don't want to compile for Linux

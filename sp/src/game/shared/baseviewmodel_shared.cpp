@@ -8,6 +8,11 @@
 #include "baseviewmodel_shared.h"
 #include "datacache/imdlcache.h"
 
+#ifdef FP
+#include "basemodularweapon.h"
+#endif // FP
+
+
 #if defined( CLIENT_DLL )
 #include "iprediction.h"
 #include "prediction.h"
@@ -429,8 +434,15 @@ void CBaseViewModel::CalcViewModelView( CBasePlayer *owner, const Vector& eyePos
 	Vector vmorigin = eyePosition;
 
 	CBaseCombatWeapon *pWeapon = m_hWeapon.Get();
+#ifdef FP
+	CBaseModularWeapon* pModWeapon = ToModularWeapon(m_hWeapon.Get());
+#endif // FP
 	//Allow weapon lagging
-	if ( pWeapon != NULL )
+	if ( pWeapon != NULL
+#ifdef FP
+		|| pModWeapon && !pModWeapon->IsIronsighted()
+#endif // FP
+		)
 	{
 #if defined( CLIENT_DLL )
 		if ( !prediction->InPrediction() )
@@ -443,11 +455,17 @@ void CBaseViewModel::CalcViewModelView( CBasePlayer *owner, const Vector& eyePos
 #endif
 		}
 	}
+
 	// Add model-specific bob even if no weapon associated (for head bob for off hand models)
-	AddViewModelBob( owner, vmorigin, vmangles );
+	AddViewModelBob(owner, vmorigin, vmangles);
+
 
 #if defined( CLIENT_DLL )
-	if ( !prediction->InPrediction() )
+	if ( !prediction->InPrediction() 
+#ifdef FP
+		&& pModWeapon && !pModWeapon->IsIronsighted()
+#endif // FP
+		)
 	{
 		// Add lag
 		CalcViewModelLag( vmorigin, vmangles, vmangoriginal );
@@ -476,6 +494,11 @@ void CBaseViewModel::CalcViewModelView( CBasePlayer *owner, const Vector& eyePos
 		vmangles.z = (eyeAngles.z + angAnglesDiff.z);
 	}
 #endif
+
+	if (pModWeapon)
+	{
+		CalcIronsights(vmorigin, vmangles);
+	}
 
 	SetLocalOrigin( vmorigin );
 	SetLocalAngles( vmangles );
@@ -817,3 +840,39 @@ CBaseCombatWeapon *CHandViewModel::GetOwningWeapon()
 		return NULL;
 }
 #endif
+
+#ifdef FP
+void CBaseViewModel::CalcIronsights(Vector& pos, QAngle& ang)
+{
+	CBaseModularWeapon* pWeapon = ToModularWeapon(GetOwningWeapon());
+
+	if (!pWeapon)
+		return;
+
+	//get delta time for interpolation
+	float delta = (gpGlobals->curtime - pWeapon->m_flIronsightedTime) * 2.5f; //modify this value to adjust how fast the interpolation is
+	float exp = (pWeapon->IsIronsighted()) ?
+		(delta > 1.0f) ? 1.0f : delta : //normal blending
+		(delta > 1.0f) ? 0.0f : 1.0f - delta; //reverse interpolation
+
+	if (exp <= 0.001f) //fully not ironsighted; save performance
+		return;
+
+	Vector newPos = pos;
+	QAngle newAng = ang;
+
+	Vector vForward, vRight, vUp, vOffset;
+	AngleVectors(newAng, &vForward, &vRight, &vUp);
+	vOffset = pWeapon->GetIronsightPositionOffset();
+
+	newPos += vForward * vOffset.x;
+	newPos += vRight * vOffset.y;
+	newPos += vUp * vOffset.z;
+	newAng += pWeapon->GetIronsightAngleOffset();
+	//fov is handled by CBaseCombatWeapon
+
+	pos += (newPos - pos) * exp;
+	ang += (newAng - ang) * exp;
+}
+#endif // FP
+

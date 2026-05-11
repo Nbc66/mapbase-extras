@@ -52,6 +52,10 @@ extern short		g_sModelIndexSmoke;			// (in combatweapon.cpp) holds the index for
 extern short		g_sModelIndexBloodDrop;		// (in combatweapon.cpp) holds the sprite index for the initial blood
 extern short		g_sModelIndexBloodSpray;	// (in combatweapon.cpp) holds the sprite index for splattered blood
 
+#ifdef MAPBASE
+CUtlVector<const char*> g_vecWeaponList;		//Holds a list of all the weapons we want to register to the impulse 101 cheat command
+#endif // MAPBASE
+
 #ifdef	DEBUG
 void DBG_AssertFunction( bool fExpr, const char *szExpr, const char *szFile, int szLine, const char *szMessage )
 {
@@ -1625,7 +1629,6 @@ float UTIL_WaterLevel( const Vector &position, float minz, float maxz )
 	return midUp.z;
 }
 
-
 //-----------------------------------------------------------------------------
 // Like UTIL_WaterLevel, but *way* less expensive.
 // I didn't replace UTIL_WaterLevel everywhere to avoid breaking anything.
@@ -1804,6 +1807,7 @@ void CPrecacheOtherList::LevelInitPreEntity()
 void CPrecacheOtherList::LevelShutdownPostEntity()
 {
 	m_list.RemoveAll();
+	g_vecWeaponList.Purge();
 }
 
 //-----------------------------------------------------------------------------
@@ -1852,6 +1856,20 @@ void UTIL_PrecacheOther( const char *szClassname, const char *modelName )
 	
 	if (pEntity)
 		pEntity->Precache( );
+
+#ifdef MAPBASE
+	if (pEntity && pEntity->IsBaseCombatWeapon())
+	{
+		CBaseCombatWeapon* pWeapon = static_cast<CBaseCombatWeapon*>(pEntity);
+
+		if (pWeapon && pWeapon->IsRegisterdForImpulseCommand())
+		{
+			g_vecWeaponList.AddToTail(pWeapon->GetClassname());
+		}
+
+	}
+#endif // MAPBASE
+
 
 	UTIL_RemoveImmediate( pEntity );
 }

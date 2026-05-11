@@ -6,138 +6,31 @@
 //=============================================================================//
 
 #include "cbase.h"
-#include "npcevent.h"
-#include "basehlcombatweapon.h"
-#include "basecombatcharacter.h"
-#include "ai_basenpc.h"
-#include "player.h"
-#include "gamerules.h"
-#include "in_buttons.h"
-#include "soundent.h"
-#include "game.h"
-#include "vstdlib/random.h"
-#include "gamestats.h"
+#include "weapon_pistol.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
-#define	PISTOL_FASTEST_REFIRE_TIME		0.1f
-#define	PISTOL_FASTEST_DRY_REFIRE_TIME	0.2f
+IMPLEMENT_SERVERCLASS_ST(CWeaponPistol, DT_WeaponPistol)
+END_SEND_TABLE()
 
-#define	PISTOL_ACCURACY_SHOT_PENALTY_TIME		0.2f	// Applied amount of time each shot adds to the time we must recover from
-#define	PISTOL_ACCURACY_MAXIMUM_PENALTY_TIME	1.5f	// Maximum penalty to deal out
+LINK_ENTITY_TO_CLASS(weapon_pistol, CWeaponPistol);
+PRECACHE_WEAPON_REGISTER(weapon_pistol);
 
-ConVar	pistol_use_new_accuracy( "pistol_use_new_accuracy", "1" );
+BEGIN_DATADESC(CWeaponPistol)
+
+DEFINE_FIELD(m_flSoonestPrimaryAttack, FIELD_TIME),
+DEFINE_FIELD(m_flLastAttackTime, FIELD_TIME),
+DEFINE_FIELD(m_flAccuracyPenalty, FIELD_FLOAT), //NOTENOTE: This is NOT tracking game time
+DEFINE_FIELD(m_nNumShotsFired, FIELD_INTEGER),
+
+END_DATADESC()
+
+ConVar pistol_use_new_accuracy("pistol_use_new_accuracy", "1");
 
 //-----------------------------------------------------------------------------
 // CWeaponPistol
 //-----------------------------------------------------------------------------
-
-class CWeaponPistol : public CBaseHLCombatWeapon
-{
-	DECLARE_DATADESC();
-
-public:
-	DECLARE_CLASS( CWeaponPistol, CBaseHLCombatWeapon );
-
-	CWeaponPistol(void);
-
-	DECLARE_SERVERCLASS();
-
-	void	Precache( void );
-	void	ItemPostFrame( void );
-	void	ItemPreFrame( void );
-	void	ItemBusyFrame( void );
-	void	PrimaryAttack( void );
-	void	AddViewKick( void );
-	void	DryFire( void );
-	void	Operator_HandleAnimEvent( animevent_t *pEvent, CBaseCombatCharacter *pOperator );
-#ifdef MAPBASE
-	void	FireNPCPrimaryAttack( CBaseCombatCharacter *pOperator, Vector &vecShootOrigin, Vector &vecShootDir );
-	void	Operator_ForceNPCFire( CBaseCombatCharacter  *pOperator, bool bSecondary );
-#endif
-
-	void	UpdatePenaltyTime( void );
-
-	int		CapabilitiesGet( void ) { return bits_CAP_WEAPON_RANGE_ATTACK1; }
-	Activity	GetPrimaryAttackActivity( void );
-
-	virtual bool Reload( void );
-
-	virtual const Vector& GetBulletSpread( void )
-	{		
-		// Handle NPCs first
-		static Vector npcCone = VECTOR_CONE_5DEGREES;
-		if ( GetOwner() && GetOwner()->IsNPC() )
-			return npcCone;
-			
-		static Vector cone;
-
-		if ( pistol_use_new_accuracy.GetBool() )
-		{
-			float ramp = RemapValClamped(	m_flAccuracyPenalty, 
-											0.0f, 
-											PISTOL_ACCURACY_MAXIMUM_PENALTY_TIME, 
-											0.0f, 
-											1.0f ); 
-
-			// We lerp from very accurate to inaccurate over time
-			VectorLerp( VECTOR_CONE_1DEGREES, VECTOR_CONE_6DEGREES, ramp, cone );
-		}
-		else
-		{
-			// Old value
-			cone = VECTOR_CONE_4DEGREES;
-		}
-
-		return cone;
-	}
-	
-	virtual int	GetMinBurst() 
-	{ 
-		return 1; 
-	}
-
-	virtual int	GetMaxBurst() 
-	{ 
-		return 3; 
-	}
-
-	virtual float GetFireRate( void ) 
-	{
-		return 0.5f; 
-	}
-
-#ifdef MAPBASE
-	// Pistols are their own backup activities
-	virtual acttable_t		*GetBackupActivityList() { return NULL; }
-	virtual int				GetBackupActivityListCount() { return 0; }
-#endif
-
-	DECLARE_ACTTABLE();
-
-private:
-	float	m_flSoonestPrimaryAttack;
-	float	m_flLastAttackTime;
-	float	m_flAccuracyPenalty;
-	int		m_nNumShotsFired;
-};
-
-
-IMPLEMENT_SERVERCLASS_ST(CWeaponPistol, DT_WeaponPistol)
-END_SEND_TABLE()
-
-LINK_ENTITY_TO_CLASS( weapon_pistol, CWeaponPistol );
-PRECACHE_WEAPON_REGISTER( weapon_pistol );
-
-BEGIN_DATADESC( CWeaponPistol )
-
-	DEFINE_FIELD( m_flSoonestPrimaryAttack, FIELD_TIME ),
-	DEFINE_FIELD( m_flLastAttackTime,		FIELD_TIME ),
-	DEFINE_FIELD( m_flAccuracyPenalty,		FIELD_FLOAT ), //NOTENOTE: This is NOT tracking game time
-	DEFINE_FIELD( m_nNumShotsFired,			FIELD_INTEGER ),
-
-END_DATADESC()
 
 acttable_t	CWeaponPistol::m_acttable[] = 
 {
