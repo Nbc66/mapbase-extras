@@ -12,7 +12,7 @@ $Project
                 $File "$ATTACHMENTDIR\attachment_def.cpp"
                 $File "$ATTACHMENTDIR\attachment_inventory.h"
                 $File "$ATTACHMENTDIR\attachment_inventory.cpp"
-		$File "$ATTACHMENTDIR\attachment_renderable.h"
+		            $File "$ATTACHMENTDIR\attachment_renderable.h"
             }
         }
     }

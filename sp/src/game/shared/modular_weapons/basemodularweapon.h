@@ -88,7 +88,7 @@ private:
 
 #ifndef CLIENT_DLL
     // Server-only: pairs with m_AttachmentDefIndices to track which instance
-    // (in the player's inventory) is in each slot. Not networked — clients
+    // (in the player's inventory) is in each slot. Not networked ï¿½ clients
     // only need the def to render; IDs are bookkeeping for unequip flow.
     AttachmentInstanceID_t m_AttachmentInstanceIDs[ATTACHMENT_COUNT];
 #else

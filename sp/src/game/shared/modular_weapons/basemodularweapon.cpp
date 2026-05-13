@@ -268,7 +268,7 @@ float CBaseModularWeapon::GetIronsightFOVOffset(void) const
 }
 
 // ---------------------------------------------------------------------------
-// Visibility / holster / reload — keep your existing behavior, hook client side
+// Visibility / holster / reload ï¿½ keep your existing behavior, hook client side
 // ---------------------------------------------------------------------------
 
 void CBaseModularWeapon::SetWeaponVisible(bool visible)
@@ -530,7 +530,7 @@ void CBaseModularWeapon::OnDataChanged(DataUpdateType_t updateType)
     if (updateType == DATA_UPDATE_CREATED)
         SetNextClientThink(CLIENT_THINK_ALWAYS);
 
-    // We need to react to state changes, def changes, owner changes — any
+    // We need to react to state changes, def changes, owner changes ï¿½ any
     // of these can change what GetAttachmentRenderParent returns.
     // Cheap to just always update; the function early-outs if nothing changed.
     UpdateClientAttachments();
@@ -543,7 +543,7 @@ C_BaseEntity* CBaseModularWeapon::GetAttachmentRenderParent(void)
 
     if (pOwner && pOwner == pLocal)
     {
-        // Use m_iState rather than ActiveWeapon comparison — state networks
+        // Use m_iState rather than ActiveWeapon comparison ï¿½ state networks
         // atomically with the weapon, so it's always self-consistent on the client.
         if (m_iState == WEAPON_IS_ACTIVE)
             return pOwner->GetViewModel();
