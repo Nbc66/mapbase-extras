@@ -30,6 +30,7 @@ public:
 #ifndef CLIENT_DLL
     DECLARE_DATADESC();
     virtual void UpdateOnRemove(void);
+    virtual void OnRestore(void);
 #else
     virtual void OnDataChanged(DataUpdateType_t updateType);
     void         UpdateClientAttachments(void);
@@ -91,6 +92,12 @@ private:
     // (in the player's inventory) is in each slot. Not networked � clients
     // only need the def to render; IDs are bookkeeping for unequip flow.
     AttachmentInstanceID_t m_AttachmentInstanceIDs[ATTACHMENT_COUNT];
+
+    // Server-only: PERSISTENT identity for each slot. This is what the
+    // datadesc saves. m_AttachmentDefIndices (the networked index array) is
+    // NOT saved — it is rebuilt from these frozen-key names in OnRestore().
+    // Empty string = empty slot.
+    char m_szAttachmentDefNames[ATTACHMENT_COUNT][64];
 #else
     CHandle< C_AttachmentRenderable > m_hClientAttachments[ATTACHMENT_COUNT];
     unsigned short             m_LastAttachmentDefIndices[ATTACHMENT_COUNT];

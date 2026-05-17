@@ -31,10 +31,23 @@ struct AttachmentInstance_t
         : id( INVALID_ATTACHMENT_INSTANCE_ID )
         , defIndex( INVALID_ATTACHMENT_DEF_INDEX )
         , location( ATTACH_LOC_INVENTORY )
-    {}
+    {
+        szDefName[0] = '\0';
+    }
 
     AttachmentInstanceID_t id;
+
+    // PERSISTENT IDENTITY. This frozen-key name is what gets saved to disk.
+    // It survives attachment scripts being added, removed, or reordered,
+    // because it is intrinsic to the attachment rather than a load-order
+    // artifact. defIndex below is rebuilt from this on load.
+    char                   szDefName[64];
+
+    // RUNTIME CACHE ONLY — deliberately NOT in the datadesc. Rebuilt from
+    // szDefName in CAttachmentInventory::OnRestore(). Persisting a registry
+    // index would silently corrupt saves whenever the script set changes.
     unsigned short         defIndex;
+
     int                    location;        // AttachmentLocation_t, stored as int for save
     EHANDLE                hEquippedWeapon;
 
@@ -67,6 +80,11 @@ public:
 
     int                          Count() const { return m_Instances.Count(); }
     const AttachmentInstance_t  &Get( int i )  const { return m_Instances[i]; }
+
+    // Rebuilds runtime defIndex cache from the persisted szDefName on each
+    // instance. Drops instances whose attachment no longer exists. Must be
+    // called from the owning entity's OnRestore (the player).
+    void OnRestore();
 
     DECLARE_SIMPLE_DATADESC();
 

@@ -45,11 +45,23 @@ struct AttachmentDef_t
         , vecVMOffset( 0, 0, 0 )
     {
         szName[0] = '\0';
+        szDisplayName[0] = '\0';
         szModel[0] = '\0';
         szFireSound[0] = '\0';
     }
 
+    // FROZEN IDENTITY KEY. This is the KeyValues block name. It is used for
+    // save/restore, networking resolution, compatible_weapons lists, and
+    // console command arguments. NEVER change a szName once it has shipped —
+    // doing so orphans every existing save that references it. Treat it like
+    // an enum value: append-only, permanent. Player-facing text uses
+    // szDisplayName instead, which is free to change at any time.
     char              szName[64];
+
+    // Human-facing label. Safe to edit in any patch. Falls back to szName
+    // if "display_name" is absent from the script.
+    char              szDisplayName[64];
+
     AttachmentType_t  type;
     char              szModel[MAX_PATH];
     char              szFireSound[64];
@@ -63,6 +75,12 @@ struct AttachmentDef_t
     CUtlVector<CUtlString> compatibleWeapons;
 
     bool IsCompatibleWith( const char *pszWeaponClass ) const;
+
+    // Returns the display name, or the frozen key if no display name was set.
+    const char* GetDisplayName() const
+    {
+        return szDisplayName[0] ? szDisplayName : szName;
+    }
 };
 
 //-----------------------------------------------------------------------------
@@ -75,6 +93,11 @@ public:
     static CAttachmentDefRegistry &Instance();
 
     void LoadAll();
+
+    // Loads defs if not already loaded. Safe to call from any context that
+    // needs the registry populated (e.g. save-game restore, which may run
+    // before any Precache). Idempotent.
+    void EnsureLoaded();
 
     const AttachmentDef_t *FindByName( const char *pszName ) const;
     const AttachmentDef_t *FindByIndex( unsigned short index ) const;

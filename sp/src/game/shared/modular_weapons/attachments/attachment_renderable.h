@@ -7,12 +7,15 @@
 #ifdef CLIENT_DLL
 
 #include "c_baseanimating.h"
-#include "studio.h"
+
+struct ClientModelRenderInfo_t;
 
 //-----------------------------------------------------------------------------
 // Client-only renderable for weapon attachment models. Bonemerges to a parent
 // entity (viewmodel, worldmodel, or weapon entity in the world). Does not
 // consume server edicts — created via InitializeAsClientEntity().
+//
+// Implementation lives in attachment_renderable.cpp.
 //-----------------------------------------------------------------------------
 class C_AttachmentRenderable : public C_BaseAnimating
 {
@@ -21,60 +24,18 @@ public:
 
     // Required for bonemerge to actually access bones on the parent skeleton.
     // Without these, bonemerge silently fails and the model floats.
-    void SetupBonemerge()
-    {
-        m_BoneAccessor.SetReadableBones(BONE_USED_BY_ANYTHING);
-        m_BoneAccessor.SetWritableBones(BONE_USED_BY_ANYTHING);
-    }
+    void SetupBonemerge();
 
-    virtual RenderGroup_t GetRenderGroup() { return RENDER_GROUP_VIEW_MODEL_TRANSLUCENT; };
+    // Render group depends on the parent: viewmodel attachments must draw in
+    // the viewmodel pass (after viewmodel bone setup), worldmodel attachments
+    // draw in the normal entity passes alongside the parent worldmodel.
+    virtual RenderGroup_t GetRenderGroup() OVERRIDE;
 
     // Sample lighting at the parent's illumination point instead of our own
     // bonemerged origin. Without this, the attachment can look unlit in lit
     // areas (or vice versa) because our bone-derived position is somewhere
     // weird relative to the parent's actual mesh.
-    virtual bool OnInternalDrawModel(ClientModelRenderInfo_t* pInfo) OVERRIDE
-    {
-        if (!BaseClass::OnInternalDrawModel(pInfo))
-            return false;
-
-        C_BaseEntity* pMoveParent = GetMoveParent();
-        if (!pMoveParent)
-            return true;
-
-        C_BaseAnimating* pParent = pMoveParent->GetBaseAnimating();
-        if (!pParent)
-            return true;
-
-        CStudioHdr* pParentHdr = pParent->GetModelPtr();
-        if (!pParentHdr)
-            return true;
-
-        // Static is fine here — only one model draws at a time per thread,
-        // and pInfo->pLightingOrigin is consumed before the next call.
-        static Vector vecLightingOrigin = vec3_origin;
-
-        int iIllumAttachIdx = pParentHdr->IllumPositionAttachmentIndex();
-        if (iIllumAttachIdx <= 0)
-        {
-            // No dedicated illum-position attachment; use the parent's
-            // local illum position transformed by its world matrix.
-            VectorTransform(pParentHdr->illumposition(),
-                pParent->RenderableToWorldTransform(),
-                vecLightingOrigin);
-        }
-        else
-        {
-            matrix3x4_t matAttachment;
-            pParent->GetAttachment(iIllumAttachIdx, matAttachment);
-            VectorTransform(pParentHdr->illumposition(),
-                matAttachment,
-                vecLightingOrigin);
-        }
-
-        pInfo->pLightingOrigin = &vecLightingOrigin;
-        return true;
-    }
+    virtual bool OnInternalDrawModel(ClientModelRenderInfo_t* pInfo) OVERRIDE;
 };
 
 #endif // CLIENT_DLL
