@@ -4051,6 +4051,11 @@ void CHL2_Player::UpdateClientData( void )
 void CHL2_Player::OnRestore()
 {
 	BaseClass::OnRestore();
+
+#ifdef FP
+	m_AttachmentInventory.OnRestore();
+#endif // FP
+
 	m_pPlayerAISquad = g_AI_SquadManager.FindCreateSquad(AllocPooledString(PLAYER_SQUADNAME));
 
 #ifdef SP_ANIM_STATE

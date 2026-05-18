@@ -59,16 +59,20 @@ unsigned short CAttachmentDefRegistry::FindIndexByName( const char *pszName ) co
     return idx;
 }
 
-void CAttachmentDefRegistry::PrecacheAll()
+void CAttachmentDefRegistry::EnsureLoaded()
 {
-    // Lazy-load defs on first call. Scripts don't change between levels,
-    // so we only do this once per process.
+    // Scripts don't change between levels, so we only load once per process.
     static bool s_bLoaded = false;
     if (!s_bLoaded)
     {
         LoadAll();
         s_bLoaded = true;
     }
+}
+
+void CAttachmentDefRegistry::PrecacheAll()
+{
+    EnsureLoaded();
 
     for (unsigned short i = m_Defs.First(); i != m_Defs.InvalidIndex(); i = m_Defs.Next(i))
     {
@@ -147,6 +151,9 @@ bool CAttachmentDefRegistry::ParseFile(const char* pszPath)
 
         AttachmentDef_t* pDef = new AttachmentDef_t;
         V_strncpy(pDef->szName, pszName, sizeof(pDef->szName));
+
+        // Display name: optional, falls back to the frozen key.
+        V_strncpy( pDef->szDisplayName,pBlock->GetString( "display_name", pszName ), sizeof( pDef->szDisplayName ) );
 
         const char* pszType = pBlock->GetString("type", "");
         pDef->type = ParseTypeString(pszType);

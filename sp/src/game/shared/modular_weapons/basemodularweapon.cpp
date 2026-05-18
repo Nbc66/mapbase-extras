@@ -99,7 +99,9 @@ RecvPropArray3(RECVINFO_ARRAY(m_AttachmentDefIndices),
 
 #ifdef GAME_DLL
     BEGIN_DATADESC(CBaseModularWeapon)
-    DEFINE_AUTO_ARRAY(m_AttachmentDefIndices, FIELD_SHORT),
+    // m_AttachmentDefIndices is NOT saved — it is the networked runtime
+    // index cache, rebuilt from m_szAttachmentDefNames in OnRestore().
+    DEFINE_AUTO_ARRAY2D(m_szAttachmentDefNames, FIELD_CHARACTER),
     DEFINE_AUTO_ARRAY(m_AttachmentInstanceIDs, FIELD_INTEGER),
     DEFINE_FIELD(m_bIsIronsighted, FIELD_BOOLEAN),
     DEFINE_FIELD(m_flIronsightedTime, FIELD_FLOAT),
@@ -120,6 +122,7 @@ RecvPropArray3(RECVINFO_ARRAY(m_AttachmentDefIndices),
         m_AttachmentDefIndices.Set(i, INVALID_ATTACHMENT_DEF_INDEX);
 #ifndef CLIENT_DLL
         m_AttachmentInstanceIDs[i] = INVALID_ATTACHMENT_INSTANCE_ID;
+        m_szAttachmentDefNames[i][0] = '\0';
 #else
         m_hClientAttachments[i] = NULL;
         m_LastAttachmentDefIndices[i] = INVALID_ATTACHMENT_DEF_INDEX;
@@ -177,6 +180,13 @@ void CBaseModularWeapon::SetAttachmentInSlot(AttachmentType_t type, AttachmentIn
         return;
     m_AttachmentDefIndices.Set(type, defIndex);
     m_AttachmentInstanceIDs[type] = instanceID;
+
+    // Keep the persistent name in lockstep with the runtime index, so the
+    // next save writes the correct frozen key for this slot.
+    const AttachmentDef_t* pDef = GetAttachmentDef(defIndex);
+    V_strncpy(m_szAttachmentDefNames[type],
+              pDef ? pDef->szName : "",
+              sizeof(m_szAttachmentDefNames[type]));
 }
 
 void CBaseModularWeapon::ClearAttachmentInSlot(AttachmentType_t type)
@@ -185,6 +195,7 @@ void CBaseModularWeapon::ClearAttachmentInSlot(AttachmentType_t type)
         return;
     m_AttachmentDefIndices.Set(type, INVALID_ATTACHMENT_DEF_INDEX);
     m_AttachmentInstanceIDs[type] = INVALID_ATTACHMENT_INSTANCE_ID;
+    m_szAttachmentDefNames[type][0] = '\0';
 }
 
 AttachmentInstanceID_t CBaseModularWeapon::GetAttachmentInstanceID(AttachmentType_t type) const
@@ -206,6 +217,67 @@ void CBaseModularWeapon::UpdateOnRemove(void)
     }
 
     BaseClass::UpdateOnRemove();
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: The datadesc restored m_szAttachmentDefNames (the persistent
+//          frozen keys) but NOT m_AttachmentDefIndices (the networked runtime
+//          cache). Rebuild the index array from the names against the current
+//          registry. Slots whose attachment no longer exists are cleared.
+//
+//          Registry is loaded lazily by Precache; if a load happens before
+//          any precache (shouldn't, but defensively) FindIndexByName simply
+//          returns INVALID and the slot clears — graceful, not a crash.
+//-----------------------------------------------------------------------------
+void CBaseModularWeapon::OnRestore(void)
+{
+    BaseClass::OnRestore();
+
+    CAttachmentDefRegistry& registry = CAttachmentDefRegistry::Instance();
+    registry.EnsureLoaded();   // restore may run before any Precache
+
+    for (int slot = ATTACHMENT_NONE + 1; slot < ATTACHMENT_COUNT; slot++)
+    {
+        const char* pszName = m_szAttachmentDefNames[slot];
+
+        if (!pszName[0])
+        {
+            // Empty slot.
+            m_AttachmentDefIndices.Set(slot, INVALID_ATTACHMENT_DEF_INDEX);
+            continue;
+        }
+
+        unsigned short idx = registry.FindIndexByName(pszName);
+
+        if (idx != INVALID_ATTACHMENT_DEF_INDEX)
+        {
+            // Defensive: make sure the resolved def actually belongs in this
+            // slot. If an attachment's "type" was changed in a patch, the
+            // saved name now resolves to a def of a different type — treat
+            // that as a missing attachment rather than a type-mismatched slot.
+            const AttachmentDef_t* pDef = registry.FindByIndex(idx);
+            if (pDef && pDef->type != (AttachmentType_t)slot)
+            {
+                Warning("CBaseModularWeapon::OnRestore: saved attachment '%s' "
+                        "changed type; clearing slot %d.\n", pszName, slot);
+                idx = INVALID_ATTACHMENT_DEF_INDEX;
+            }
+        }
+        else
+        {
+            Warning("CBaseModularWeapon::OnRestore: saved attachment '%s' "
+                    "no longer exists; clearing slot %d.\n", pszName, slot);
+        }
+
+        m_AttachmentDefIndices.Set(slot, idx);
+
+        if (idx == INVALID_ATTACHMENT_DEF_INDEX)
+        {
+            // Keep the slot fully consistent — drop the stale name and ID too.
+            m_szAttachmentDefNames[slot][0] = '\0';
+            m_AttachmentInstanceIDs[slot] = INVALID_ATTACHMENT_INSTANCE_ID;
+        }
+    }
 }
 #endif // !CLIENT_DLL
 

@@ -12,7 +12,8 @@
 
 BEGIN_SIMPLE_DATADESC( AttachmentInstance_t )
     DEFINE_FIELD( id,              FIELD_INTEGER ),
-    DEFINE_FIELD( defIndex,        FIELD_SHORT ),
+    DEFINE_AUTO_ARRAY( szDefName,  FIELD_CHARACTER ),
+    // defIndex intentionally omitted — rebuilt from szDefName in OnRestore.
     DEFINE_FIELD( location,        FIELD_INTEGER ),
     DEFINE_FIELD( hEquippedWeapon, FIELD_EHANDLE ),
 END_DATADESC()
@@ -64,7 +65,8 @@ AttachmentInstanceID_t CAttachmentInventory::AddByDefName( const char *pszDefNam
 
 AttachmentInstanceID_t CAttachmentInventory::AddByDefIndex( unsigned short defIndex )
 {
-    if ( !GetAttachmentDef( defIndex ) )
+    const AttachmentDef_t *pDef = GetAttachmentDef( defIndex );
+    if ( !pDef )
         return INVALID_ATTACHMENT_INSTANCE_ID;
 
     AttachmentInstance_t inst;
@@ -72,6 +74,9 @@ AttachmentInstanceID_t CAttachmentInventory::AddByDefIndex( unsigned short defIn
     inst.defIndex        = defIndex;
     inst.location        = ATTACH_LOC_INVENTORY;
     inst.hEquippedWeapon = NULL;
+
+    // Stamp the frozen-key name — this is what persists across save/load.
+    V_strncpy( inst.szDefName, pDef->szName, sizeof( inst.szDefName ) );
 
     m_Instances.AddToTail( inst );
     return inst.id;
@@ -167,6 +172,45 @@ void CAttachmentInventory::OnWeaponDestroyed( CBaseModularWeapon *pWeapon )
             m_Instances[i].location        = ATTACH_LOC_INVENTORY;
             m_Instances[i].hEquippedWeapon = NULL;
         }
+    }
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: After a save is loaded, the datadesc has restored szDefName but
+//          NOT defIndex (it isn't saved). Resolve each name back to a current
+//          registry index. Any instance whose attachment no longer exists in
+//          the loaded script set is dropped — gracefully, so the rest of the
+//          save still loads.
+//
+//          Must be driven from the owning player's OnRestore(). The registry
+//          is loaded lazily; ensure it is populated before this runs.
+//-----------------------------------------------------------------------------
+void CAttachmentInventory::OnRestore()
+{
+    CAttachmentDefRegistry &registry = CAttachmentDefRegistry::Instance();
+    registry.EnsureLoaded();   // restore may run before any Precache
+
+    for ( int i = 0; i < m_Instances.Count(); /* advance inside */ )
+    {
+        AttachmentInstance_t &inst = m_Instances[i];
+
+        inst.defIndex = registry.FindIndexByName( inst.szDefName );
+
+        if ( inst.defIndex == INVALID_ATTACHMENT_DEF_INDEX )
+        {
+            // The attachment this save refers to no longer exists (renamed
+            // without an alias, or deleted). Drop the instance rather than
+            // leaving a dangling reference. If it was equipped, the weapon's
+            // own OnRestore will independently fail to resolve the same name
+            // and clear its slot.
+            Warning( "CAttachmentInventory::OnRestore: saved attachment '%s' "
+                     "no longer exists; dropping instance %d.\n",
+                     inst.szDefName, inst.id );
+            m_Instances.Remove( i );
+            continue;   // don't advance — Remove shifted the next element down
+        }
+
+        i++;
     }
 }
 
@@ -364,7 +408,9 @@ CON_COMMAND_F( fp_list_attachments, "List the player's attachment inventory", FC
         const char *pszOn = "";
         if ( inst.location == ATTACH_LOC_EQUIPPED && inst.hEquippedWeapon.Get() )
             pszOn = inst.hEquippedWeapon->GetClassname();
-        Msg( "  [%d] %s — %s %s\n", inst.id, pDef ? pDef->szName : "<bad def>", pszLoc, pszOn );
+        Msg( "  [%d] %s — %s %s\n", inst.id,
+             pDef ? pDef->GetDisplayName() : "<bad def>",   // <-- was pDef->szName
+             pszLoc, pszOn );
     }
 }
 
