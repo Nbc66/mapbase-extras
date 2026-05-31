@@ -18,6 +18,9 @@
 #include "prediction.h"
 #include "client_virtualreality.h"
 #include "sourcevr/isourcevirtualreality.h"
+#ifdef FP
+#include "bone_setup.h"   // GESTURES: full IBoneSetup / AccumulatePose definition
+#endif // FP
 #else
 #include "vguiscreen.h"
 #endif
@@ -47,6 +50,9 @@ CBaseViewModel::CBaseViewModel()
 	// NOTE: We do this here because the color is never transmitted for the view model.
 	m_nOldAnimationParity = 0;
 	m_EntClientFlags |= ENTCLIENTFLAG_ALWAYS_INTERPOLATE;
+#ifdef FP
+	V_memset(m_Gestures, 0, sizeof(m_Gestures));   // GESTURES
+#endif // FP
 #endif
 	SetRenderColor( 255, 255, 255, 255 );
 
@@ -779,6 +785,130 @@ bool CBaseViewModel::GetAttachmentVelocity( int number, Vector &originVel, Quate
 	return BaseClass::GetAttachmentVelocity( number, originVel, angleVel );
 }
 
+#ifdef FP
+// ====================== GESTURES ======================
+int CBaseViewModel::PlayGesture(const char* seqName, float speed, float peak,
+	float speedIn, float speedOut, float curve,
+	float startCycle, bool loop)
+{
+	int seq = LookupSequence(seqName);
+	if (seq < 0)
+	{
+		DevWarning("CBaseViewModel: no sequence '%s' on current VM model\n", seqName);
+		return -1;
+	}
+	for (int i = 0; i < MAX_VM_GESTURES; ++i)
+	{
+		if (m_Gestures[i].active)
+			continue;
+		vmgesture_t& g = m_Gestures[i];
+		g.sequence = seq;
+		g.modelIndex = GetModelIndex();
+		g.startTime = gpGlobals->curtime;
+		g.startCycle = startCycle;
+		g.speed = speed;
+		g.peakOffset = peak;
+		g.speedIn = speedIn;
+		g.speedOut = speedOut;
+		g.curve = curve;
+		g.loop = loop;
+		g.active = true;
+		return i;
+	}
+	return -1;
+}
+
+void CBaseViewModel::StopGesture(int slot)
+{
+	if (slot >= 0 && slot < MAX_VM_GESTURES)
+		m_Gestures[slot].active = false;
+}
+
+void CBaseViewModel::StopAllGestures(void)
+{
+	for (int i = 0; i < MAX_VM_GESTURES; ++i)
+		m_Gestures[i].active = false;
+}
+
+bool CBaseViewModel::IsGestureActive(int slot) const
+{
+	return (slot >= 0 && slot < MAX_VM_GESTURES) ? m_Gestures[slot].active : false;
+}
+
+float CBaseViewModel::ComputeGestureWeight(const vmgesture_t& g, float now) const
+{
+	const float peakTime = g.startTime + g.peakOffset;
+	float m;
+	if (now < peakTime)
+	{
+		m = clamp(1.0f - (now - g.startTime) * 7.0f * g.speedIn, 0.0f, 1.0f);
+	}
+	else
+	{
+		float mPeak = clamp(1.0f - (peakTime - g.startTime) * 7.0f * g.speedIn, 0.0f, 1.0f);
+		m = clamp(mPeak + (now - peakTime) * 7.0f * g.speedOut, 0.0f, 1.0f);
+	}
+	return 1.0f - powf(m, g.curve);   // gesture weight; VManip curved blend
+}
+
+float CBaseViewModel::ComputeGestureCycle(const vmgesture_t& g, float now) const
+{
+	float c = g.startCycle + (now - g.startTime) * g.speed; // speed = cycles/sec
+	if (g.loop)
+		c -= floorf(c);
+	else
+		c = clamp(c, 0.0f, 1.0f);
+	return c;
+}
+
+void CBaseViewModel::StandardBlendingRules(CStudioHdr* hdr, Vector pos[],
+	Quaternion q[], float currentTime,
+	int boneMask)
+{
+	// Normal weapon viewmodel pose first.
+	BaseClass::StandardBlendingRules(hdr, pos, q, currentTime, boneMask);
+
+	if (!hdr || !hdr->SequencesAvailable())
+		return;
+
+	const int curModelIndex = GetModelIndex();
+	const int numSeq = hdr->GetNumSeq();
+
+	float poseParams[MAXSTUDIOPOSEPARAM];
+	GetPoseParameters(hdr, poseParams);
+	IBoneSetup boneSetup(hdr, boneMask, poseParams);
+
+	for (int i = 0; i < MAX_VM_GESTURES; ++i)
+	{
+		vmgesture_t& g = m_Gestures[i];
+		if (!g.active)
+			continue;
+
+		// A stored sequence index is only valid for the model it came from.
+		if (g.modelIndex != curModelIndex || g.sequence < 0 || g.sequence >= numSeq)
+		{
+			g.active = false;
+			continue;
+		}
+
+		const float weight = ComputeGestureWeight(g, currentTime);
+		const float cycle = ComputeGestureCycle(g, currentTime);
+
+		const bool pastPeak = (currentTime >= g.startTime + g.peakOffset);
+		const bool fadedOut = pastPeak && (weight <= 0.0f);
+		const bool finished = (!g.loop && cycle >= 1.0f && weight <= 0.0f);
+		if (fadedOut || finished)
+		{
+			g.active = false;
+			continue;
+		}
+		if (weight <= 0.0f)
+			continue;
+
+		boneSetup.AccumulatePose(pos, q, g.sequence, cycle, weight, currentTime, NULL);
+	}
+}
+#endif // FP
 #endif
 
 #ifdef MAPBASE
@@ -874,5 +1004,44 @@ void CBaseViewModel::CalcIronsights(Vector& pos, QAngle& ang)
 	pos += (newPos - pos) * exp;
 	ang += (newAng - ang) * exp;
 }
+
+#ifdef CLIENT_DLL
+CON_COMMAND(vm_testgesture, "Play a viewmodel gesture by sequence name")
+{
+	if (args.ArgC() < 2)
+	{
+		Msg("usage: vm_testgesture <sequenceName> [holdSeconds]\n");
+		return;
+	}
+
+	C_BasePlayer* pPlayer = C_BasePlayer::GetLocalPlayer();
+	if (!pPlayer) return;
+
+	C_BaseViewModel* pVM = pPlayer->GetViewModel();
+	if (!pVM) { Msg("no viewmodel\n"); return; }
+
+	float hold = (args.ArgC() >= 3) ? atof(args.Arg(2)) : 0.4f;
+
+	int slot = pVM->PlayGesture(args.Arg(1), 1.0f, hold);
+	Msg("PlayGesture('%s', peak=%.2f) -> slot %d\n", args.Arg(1), hold, slot);
+}
+
+CON_COMMAND(vm_listseq, "List sequences on the current viewmodel")
+{
+	C_BasePlayer* pPlayer = C_BasePlayer::GetLocalPlayer();
+	if (!pPlayer) return;
+
+	C_BaseViewModel* pVM = pPlayer->GetViewModel();
+	if (!pVM) { Msg("no viewmodel\n"); return; }
+
+	CStudioHdr* hdr = pVM->GetModelPtr();
+	if (!hdr) { Msg("no studiohdr\n"); return; }
+
+	Msg("%d sequences on %s:\n", hdr->GetNumSeq(), pVM->GetModelName());
+	for (int i = 0; i < hdr->GetNumSeq(); ++i)
+		Msg("  %2d  %s\n", i, hdr->pSeqdesc(i).pszLabel());
+}
+#endif // CLIENT_DLL
+
 #endif // FP
 

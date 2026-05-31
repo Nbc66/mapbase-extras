@@ -28,6 +28,25 @@ class CVGuiScreen;
 
 #define VIEWMODEL_INDEX_BITS 1
 
+// GESTURES: one active VManip-style gesture layer (client-only, cosmetic)
+#if defined( CLIENT_DLL )
+#define MAX_VM_GESTURES 4
+struct vmgesture_t
+{
+	int   sequence;     // sequence index in the model the VM is CURRENTLY showing
+	int   modelIndex;   // model that index is valid for (safety on weapon switch)
+	float startTime;
+	float startCycle;   // VManip startcycle
+	float speed;        // cycles/sec; 1.0 = one full play in 1s (VManip speed)
+	float peakOffset;   // VManip lerp_peak
+	float speedIn;      // VManip lerp_speed_in
+	float speedOut;     // VManip lerp_speed_out
+	float curve;        // VManip lerp_curve
+	bool  loop;
+	bool  active;
+};
+#endif
+
 class CBaseViewModel : public CBaseAnimating, public IHasOwner
 {
 	DECLARE_CLASS( CBaseViewModel, CBaseAnimating );
@@ -182,6 +201,21 @@ public:
 	virtual bool			GetAttachment( int number, Vector &origin );
 	virtual	bool			GetAttachment( int number, Vector &origin, QAngle &angles );
 	virtual bool			GetAttachmentVelocity( int number, Vector &originVel, Quaternion &angleVel );
+#ifdef FP
+	// >>> GESTURES
+	int   PlayGesture(const char* seqName, float speed = 1.0f, float peak = 0.4f,
+	float speedIn = 1.0f, float speedOut = 1.0f,
+	float curve = 1.0f, float startCycle = 0.0f, bool loop = false);
+	void  StopGesture(int slot);
+	void  StopAllGestures(void);
+	bool  IsGestureActive(int slot) const;
+
+protected:
+	virtual void StandardBlendingRules(CStudioHdr* hdr, Vector pos[], Quaternion q[],
+	float currentTime, int boneMask);
+	float ComputeGestureWeight(const vmgesture_t& g, float now) const;
+	float ComputeGestureCycle(const vmgesture_t& g, float now) const;
+#endif // FP
 #endif
 
 private:
@@ -207,6 +241,9 @@ private:
 
 #if defined( CLIENT_DLL )
 	int						m_nOldAnimationParity;
+#ifdef FP
+	vmgesture_t				m_Gestures[MAX_VM_GESTURES];
+#endif // FP
 #endif
 
 
