@@ -37,7 +37,7 @@ struct vmgesture_t
 	int   modelIndex;   // model that index is valid for (safety on weapon switch)
 	float startTime;
 	float startCycle;   // VManip startcycle
-	float speed;        // cycles/sec; 1.0 = one full play in 1s (VManip speed)
+	float speed;        // speed multiplier 1.0 = 1x speed 2.0 = 2x speed
 	float peakOffset;   // VManip lerp_peak
 	float speedIn;      // VManip lerp_speed_in
 	float speedOut;     // VManip lerp_speed_out
@@ -213,8 +213,8 @@ public:
 protected:
 	virtual void StandardBlendingRules(CStudioHdr* hdr, Vector pos[], Quaternion q[],
 	float currentTime, int boneMask);
-	float ComputeGestureWeight(const vmgesture_t& g, float now) const;
-	float ComputeGestureCycle(const vmgesture_t& g, float now) const;
+	float ComputeGestureWeight(const vmgesture_t& g, float now);
+	float ComputeGestureCycle(const vmgesture_t& g, float now);
 #endif // FP
 #endif
 

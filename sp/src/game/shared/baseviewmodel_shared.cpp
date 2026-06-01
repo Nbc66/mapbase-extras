@@ -835,7 +835,7 @@ bool CBaseViewModel::IsGestureActive(int slot) const
 	return (slot >= 0 && slot < MAX_VM_GESTURES) ? m_Gestures[slot].active : false;
 }
 
-float CBaseViewModel::ComputeGestureWeight(const vmgesture_t& g, float now) const
+float CBaseViewModel::ComputeGestureWeight(const vmgesture_t& g, float now)
 {
 	const float peakTime = g.startTime + g.peakOffset;
 	float m;
@@ -851,9 +851,12 @@ float CBaseViewModel::ComputeGestureWeight(const vmgesture_t& g, float now) cons
 	return 1.0f - powf(m, g.curve);   // gesture weight; VManip curved blend
 }
 
-float CBaseViewModel::ComputeGestureCycle(const vmgesture_t& g, float now) const
+float CBaseViewModel::ComputeGestureCycle(const vmgesture_t& g, float now)
 {
-	float c = g.startCycle + (now - g.startTime) * g.speed; // speed = cycles/sec
+	CStudioHdr* hdr = GetModelPtr();
+	float rate = hdr ? GetSequenceCycleRate(hdr, g.sequence) : 1.0f;
+
+	float c = g.startCycle + (now - g.startTime) * rate * g.speed;  // authored fps * multiplier
 	if (g.loop)
 		c -= floorf(c);
 	else
