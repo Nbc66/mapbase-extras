@@ -75,6 +75,9 @@ CBaseViewModel::~CBaseViewModel()
 
 void CBaseViewModel::UpdateOnRemove( void )
 {
+#if defined( CLIENT_DLL ) && defined( FP )
+	StopAllGestures();   // tear down any live pose-source models
+#endif
 	BaseClass::UpdateOnRemove();
 
 	DestroyControlPanels();
@@ -85,6 +88,7 @@ void CBaseViewModel::UpdateOnRemove( void )
 //-----------------------------------------------------------------------------
 void CBaseViewModel::Precache( void )
 {
+	PrecacheModel("models/weapons/c_flashlight_arm.mdl");
 }
 
 //-----------------------------------------------------------------------------
@@ -803,6 +807,7 @@ int CBaseViewModel::PlayGesture(const char* seqName, float speed, float peak,
 			continue;
 		vmgesture_t& g = m_Gestures[i];
 		g.sequence = seq;
+		g.pSource = NULL;
 		g.modelIndex = GetModelIndex();
 		g.startTime = gpGlobals->curtime;
 		g.startCycle = startCycle;
@@ -818,16 +823,97 @@ int CBaseViewModel::PlayGesture(const char* seqName, float speed, float peak,
 	return -1;
 }
 
+int CBaseViewModel::PlayGestureFromModel(const char* modelName, const char* seqName,
+	float speed, float peak, float speedIn,
+	float speedOut, float curve, float startCycle, bool loop)
+{
+	C_AttachmentRenderable* pSrc = new C_AttachmentRenderable;
+	if (!pSrc->InitializeAsClientEntity(modelName, RENDER_GROUP_VIEW_MODEL_OPAQUE))
+	{
+		pSrc->Release(); 
+		return -1;
+	}
+	pSrc->SetParent(this);                 // view-space, glued to the VM (bob/sway inherited)
+	pSrc->SetLocalOrigin(vec3_origin);
+	pSrc->SetLocalAngles(vec3_angle);
+	pSrc->SetPlaybackRate(0.0f);           // we drive its cycle
+
+	int seq = pSrc->LookupSequence(seqName);
+	if (seq < 0)
+	{
+		DevWarning("PlayGestureFromModel: no sequence '%s' in %s\n", seqName, modelName);
+		pSrc->Remove();
+		return -1;
+	}
+
+	for (int i = 0; i < MAX_VM_GESTURES; ++i)
+	{
+		if (m_Gestures[i].active) continue;
+		vmgesture_t& g = m_Gestures[i];
+		g.pSource = pSrc;  g.sequence = seq;  g.modelIndex = -1;
+		g.startTime = gpGlobals->curtime;  g.startCycle = startCycle;
+		g.speed = speed;  g.peakOffset = peak;  g.speedIn = speedIn;
+		g.speedOut = speedOut;  g.curve = curve;  g.loop = loop;  g.active = true;
+		pSrc->ResetSequence(seq);
+		pSrc->SetCycle(startCycle);
+		return i;
+	}
+	pSrc->Remove();   // no free slot
+	return -1;
+}
+
+void CBaseViewModel::ApplyGestureFromModel(C_BaseAnimating* pSource, int seq, float cycle,
+	float weight, float currentTime,
+	Vector pos[], Quaternion q[])
+{
+	CStudioHdr* srcHdr = pSource->GetModelPtr();
+	if (!srcHdr)
+		return;
+
+	Vector     srcPos[MAXSTUDIOBONES];
+	Quaternion srcQ[MAXSTUDIOBONES];
+	float      srcPP[MAXSTUDIOPOSEPARAM];
+	pSource->GetPoseParameters(srcHdr, srcPP);
+
+	IBoneSetup srcSetup(srcHdr, BONE_USED_BY_ANYTHING, srcPP);
+	srcSetup.InitPose(srcPos, srcQ);
+	srcSetup.AccumulatePose(srcPos, srcQ, seq, cycle, 1.0f, currentTime, NULL);
+
+	// Per-bone weightlist for THIS sequence (the accessor you found on mstudioseqdesc_t).
+	// If the sequence has no weightlist, weightlistindex is 0 and weight(i) would read
+	// garbage off the seqdesc base -- so gate on it and fall back to "drive all".
+	mstudioseqdesc_t& seqdesc = srcHdr->pSeqdesc(seq);
+	const bool bHasWeightlist = (seqdesc.weightlistindex != 0);
+
+	for (int sb = 0; sb < srcHdr->numbones(); ++sb)
+	{
+		int vb = LookupBone(srcHdr->pBone(sb)->pszName());
+		if (vb < 0)
+			continue;   // bone not on the viewmodel -> nothing to drive
+
+		// Weightlist value for this bone (1.0 when no weightlist present).
+		float wl = bHasWeightlist ? seqdesc.weight(sb) : 1.0f;
+		if (wl <= 0.0f)
+			continue;   // weight 0 -> SKIP, so the viewmodel keeps its own pose (true mask)
+
+		float boneW = weight * wl;          // envelope * weightlist (feathering for free)
+		if (boneW <= 0.0f)
+			continue;
+
+		QuaternionSlerp(q[vb], srcQ[sb], boneW, q[vb]);
+		pos[vb] = pos[vb] + (srcPos[sb] - pos[vb]) * boneW;
+	}
+}
+
 void CBaseViewModel::StopGesture(int slot)
 {
 	if (slot >= 0 && slot < MAX_VM_GESTURES)
-		m_Gestures[slot].active = false;
+		RetireGesture(slot);
 }
 
 void CBaseViewModel::StopAllGestures(void)
 {
-	for (int i = 0; i < MAX_VM_GESTURES; ++i)
-		m_Gestures[i].active = false;
+	for (int i = 0; i < MAX_VM_GESTURES; ++i) RetireGesture(i);
 }
 
 bool CBaseViewModel::IsGestureActive(int slot) const
@@ -837,31 +923,37 @@ bool CBaseViewModel::IsGestureActive(int slot) const
 
 float CBaseViewModel::ComputeGestureWeight(const vmgesture_t& g, float now)
 {
-	const float peakTime = g.startTime + g.peakOffset;
-	float m;
-	if (now < peakTime)
-	{
-		m = clamp(1.0f - (now - g.startTime) * 7.0f * g.speedIn, 0.0f, 1.0f);
-	}
-	else
-	{
-		float mPeak = clamp(1.0f - (peakTime - g.startTime) * 7.0f * g.speedIn, 0.0f, 1.0f);
-		m = clamp(mPeak + (now - peakTime) * 7.0f * g.speedOut, 0.0f, 1.0f);
-	}
-	return 1.0f - powf(m, g.curve);   // gesture weight; VManip curved blend
+	// Ramp in over the first fraction of a second, then HOLD at full weight.
+	// No automatic fade-out: one-shots end via cycle>=1, holds end via StopGesture.
+	// (peakOffset / speedOut are unused here; keep them for an explicit fade-out later.)
+	float t = (now - g.startTime) * 7.0f * g.speedIn;
+	float m = clamp(1.0f - t, 0.0f, 1.0f);   // m: 1 -> 0 as time advances
+	return 1.0f - powf(m, g.curve);          // weight: 0 -> 1, then holds at 1
 }
 
 float CBaseViewModel::ComputeGestureCycle(const vmgesture_t& g, float now)
 {
-	CStudioHdr* hdr = GetModelPtr();
-	float rate = hdr ? GetSequenceCycleRate(hdr, g.sequence) : 1.0f;
+	C_BaseAnimating* src = g.pSource ? g.pSource : this; 
+	CStudioHdr* hdr = src->GetModelPtr();
+	float rate = hdr ? src->GetSequenceCycleRate(hdr, g.sequence) : 1.0f;
 
-	float c = g.startCycle + (now - g.startTime) * rate * g.speed;  // authored fps * multiplier
-	if (g.loop)
+	float c = g.startCycle + (now - g.startTime) * rate * g.speed;
+	if (g.loop)  
 		c -= floorf(c);
 	else
 		c = clamp(c, 0.0f, 1.0f);
 	return c;
+}
+
+void CBaseViewModel::RetireGesture(int slot)
+{
+	vmgesture_t& g = m_Gestures[slot];
+	g.active = false;
+	if (g.pSource)
+	{
+		g.pSource->Remove();
+		g.pSource = NULL;
+	}
 }
 
 void CBaseViewModel::StandardBlendingRules(CStudioHdr* hdr, Vector pos[],
@@ -874,9 +966,6 @@ void CBaseViewModel::StandardBlendingRules(CStudioHdr* hdr, Vector pos[],
 	if (!hdr || !hdr->SequencesAvailable())
 		return;
 
-	const int curModelIndex = GetModelIndex();
-	const int numSeq = hdr->GetNumSeq();
-
 	float poseParams[MAXSTUDIOPOSEPARAM];
 	GetPoseParameters(hdr, poseParams);
 	IBoneSetup boneSetup(hdr, boneMask, poseParams);
@@ -884,31 +973,56 @@ void CBaseViewModel::StandardBlendingRules(CStudioHdr* hdr, Vector pos[],
 	for (int i = 0; i < MAX_VM_GESTURES; ++i)
 	{
 		vmgesture_t& g = m_Gestures[i];
-		if (!g.active)
-			continue;
+		if (!g.active) continue;
 
-		// A stored sequence index is only valid for the model it came from.
-		if (g.modelIndex != curModelIndex || g.sequence < 0 || g.sequence >= numSeq)
+		// validity: local checks the VM model; foreign checks the source model
+		if (g.pSource == NULL)
 		{
-			g.active = false;
-			continue;
+			if (g.modelIndex != GetModelIndex() || g.sequence < 0 || g.sequence >= hdr->GetNumSeq())
+			{
+				RetireGesture(i); 
+				continue;
+			}
+		}
+		else
+		{
+			CStudioHdr* srcHdr = g.pSource->GetModelPtr();
+			if (!srcHdr || !srcHdr->SequencesAvailable() || g.sequence < 0 || g.sequence >= srcHdr->GetNumSeq())
+			{
+				RetireGesture(i); 
+				continue;
+			}
 		}
 
 		const float weight = ComputeGestureWeight(g, currentTime);
 		const float cycle = ComputeGestureCycle(g, currentTime);
 
+		// A non-looping gesture finishes when its ANIMATION completes, not when the
+		// weight envelope happens to reach zero. Only use the weight-faded-out retire
+		// for looping gestures (where there's no natural end) or gestures you explicitly
+		// fade out.
 		const bool pastPeak = (currentTime >= g.startTime + g.peakOffset);
-		const bool fadedOut = pastPeak && (weight <= 0.0f);
-		const bool finished = (!g.loop && cycle >= 1.0f && weight <= 0.0f);
-		if (fadedOut || finished)
-		{
-			g.active = false;
-			continue;
-		}
-		if (weight <= 0.0f)
-			continue;
 
-		boneSetup.AccumulatePose(pos, q, g.sequence, cycle, weight, currentTime, NULL);
+		bool retire = false;
+		if (g.loop)
+			retire = pastPeak && (weight <= 0.0f);   // looping: only a deliberate fade-out ends it
+		else
+			retire = (cycle >= 1.0f);                // one-shot: play to the end of the animation
+		if (retire) { RetireGesture(i); continue; }
+		if (weight <= 0.0f) continue;   // skip a zero-weight frame, but DON'T retire
+
+		// ---- apply the gesture pose (this is what was missing) ----
+		if (g.pSource == NULL)
+		{
+			// local (layer) gesture — sequence lives in the weapon's own model
+			boneSetup.AccumulatePose(pos, q, g.sequence, cycle, weight, currentTime, NULL);
+		}
+		else
+		{
+			// separate-model gesture — evaluate source, transfer bones (weightlist-masked)
+			g.pSource->SetCycle(cycle);   // keep its rendered mesh's frame in sync with the pose
+			ApplyGestureFromModel(g.pSource, g.sequence, cycle, weight, currentTime, pos, q);
+		}
 	}
 }
 #endif // FP
@@ -1009,7 +1123,28 @@ void CBaseViewModel::CalcIronsights(Vector& pos, QAngle& ang)
 }
 
 #ifdef CLIENT_DLL
-CON_COMMAND(vm_testgesture, "Play a viewmodel gesture by sequence name")
+CON_COMMAND_F( vm_testgesturemodel, "Test a separate-model gesture: vm_testgesturemodel <model> <seq> [loop]", FCVAR_CHEAT )
+{
+	if (args.ArgC() < 3)
+	{
+		Msg("Usage: vm_testgesturemodel <model> <sequence> [loop]\n");
+		return;
+	}
+
+	C_BasePlayer* pPlayer = C_BasePlayer::GetLocalPlayer();
+	if (!pPlayer) return;
+
+	C_BaseViewModel* pVM = pPlayer->GetViewModel();
+	if (!pVM) { Msg("no viewmodel\n"); return; }
+
+	bool loop = (args.ArgC() >= 4) ? (atoi(args.Arg(3)) != 0) : false;
+	int slot = pVM->PlayGestureFromModel(args.Arg(1), args.Arg(2),
+		1.0f, 0.4f, 1.0f, 1.0f, 1.0f, 0.0f, loop);
+	Msg("PlayGestureFromModel('%s', '%s', loop=%d) -> slot %d\n",
+		args.Arg(1), args.Arg(2), loop, slot);
+}
+
+CON_COMMAND_F( vm_testgesture, "Play a viewmodel gesture by sequence name", FCVAR_CHEAT )
 {
 	if (args.ArgC() < 2)
 	{
@@ -1029,7 +1164,7 @@ CON_COMMAND(vm_testgesture, "Play a viewmodel gesture by sequence name")
 	Msg("PlayGesture('%s', peak=%.2f) -> slot %d\n", args.Arg(1), hold, slot);
 }
 
-CON_COMMAND(vm_listseq, "List sequences on the current viewmodel")
+CON_COMMAND_F( vm_listseq, "List sequences on the current viewmodel", FCVAR_CHEAT )
 {
 	C_BasePlayer* pPlayer = C_BasePlayer::GetLocalPlayer();
 	if (!pPlayer) return;

@@ -10,6 +10,7 @@ $Macro GAMENAME 	"fracture_point" [$SOURCESDK]
 
 $Include "$SRCDIR\game\server\server_base.vpc"
 $Include "$SRCDIR\game\shared\modular_weapons\attachments\attachments.vpc"
+$Include "$SRCDIR\game\shared\gestures\gestures.vpc"
 
 $Configuration
 {

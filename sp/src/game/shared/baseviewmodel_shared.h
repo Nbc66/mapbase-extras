@@ -33,17 +33,21 @@ class CVGuiScreen;
 #define MAX_VM_GESTURES 4
 struct vmgesture_t
 {
-	int   sequence;     // sequence index in the model the VM is CURRENTLY showing
-	int   modelIndex;   // model that index is valid for (safety on weapon switch)
+	C_BaseAnimating *pSource;   // NULL = sequence is in the VM's own model (layer path).
+	                            // non-NULL = evaluate this model, transfer bones (VManip path).
+	int   sequence;     // index into pSource's model if pSource set, else the VM's model
+	int   modelIndex;   // (local gestures only) VM model the index is valid for
 	float startTime;
-	float startCycle;   // VManip startcycle
-	float speed;        // speed multiplier 1.0 = 1x speed 2.0 = 2x speed
-	float peakOffset;   // VManip lerp_peak
-	float speedIn;      // VManip lerp_speed_in
-	float speedOut;     // VManip lerp_speed_out
-	float curve;        // VManip lerp_curve
+	float startCycle;
+	float speed;
+	float peakOffset;
+	float speedIn;
+	float speedOut;
+	float curve;
 	bool  loop;
 	bool  active;
+	char  nextSeq[64];   // empty = nothing queued -> retire (remove model)
+	bool  nextLoop;
 };
 #endif
 
@@ -206,9 +210,22 @@ public:
 	int   PlayGesture(const char* seqName, float speed = 1.0f, float peak = 0.4f,
 	float speedIn = 1.0f, float speedOut = 1.0f,
 	float curve = 1.0f, float startCycle = 0.0f, bool loop = false);
+
+	// Spawn a source model and play a sequence FROM it; its bones transfer onto us
+	// (full reuse of the slot/envelope/cycle pipeline). Same params as PlayGesture.
+	int   PlayGestureFromModel(const char* modelName, const char* seqName,
+		float speed = 1.0f, float peak = 0.4f,
+		float speedIn = 1.0f, float speedOut = 1.0f,
+		float curve = 1.0f, float startCycle = 0.0f, bool loop = false);
+
 	void  StopGesture(int slot);
 	void  StopAllGestures(void);
 	bool  IsGestureActive(int slot) const;
+
+private:
+	void  RetireGesture(int slot);   // deactivates + removes a source model if present
+	void  ApplyGestureFromModel(C_BaseAnimating* pSource, int seq, float cycle,
+		float weight, float currentTime, Vector pos[], Quaternion q[]);
 
 protected:
 	virtual void StandardBlendingRules(CStudioHdr* hdr, Vector pos[], Quaternion q[],
