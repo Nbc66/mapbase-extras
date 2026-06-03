@@ -37,13 +37,18 @@ struct vmgesture_t
 	                            // non-NULL = evaluate this model, transfer bones (VManip path).
 	int   sequence;     // index into pSource's model if pSource set, else the VM's model
 	int   modelIndex;   // (local gestures only) VM model the index is valid for
-	float startTime;
+	float startTime;       // weight-envelope clock (ramp-in); stamped at play time
 	float startCycle;
+	float cycleStartTime;  // cycle clock; kept separate from startTime so a queued
+	                       // advance can restart the cycle without re-ramping the
+	                       // weight (avoids a fade dip when chaining pullout->idle)
 	float speed;
 	float peakOffset;
 	float speedIn;
 	float speedOut;
 	float curve;
+	float fadeOutDur;     // end-fade ramp length (s); 0 = snap on retire (legacy)
+	float fadeOutStart;   // time the end-fade began; <0 = not fading yet
 	bool  loop;
 	bool  active;
 	char  nextSeq[64];   // empty = nothing queued -> retire (remove model)
@@ -209,14 +214,22 @@ public:
 	// >>> GESTURES
 	int   PlayGesture(const char* seqName, float speed = 1.0f, float peak = 0.4f,
 	float speedIn = 1.0f, float speedOut = 1.0f,
-	float curve = 1.0f, float startCycle = 0.0f, bool loop = false);
+	float curve = 1.0f, float startCycle = 0.0f, bool loop = false,
+	float fadeOut = 0.0f);
 
 	// Spawn a source model and play a sequence FROM it; its bones transfer onto us
 	// (full reuse of the slot/envelope/cycle pipeline). Same params as PlayGesture.
 	int   PlayGestureFromModel(const char* modelName, const char* seqName,
 		float speed = 1.0f, float peak = 0.4f,
 		float speedIn = 1.0f, float speedOut = 1.0f,
-		float curve = 1.0f, float startCycle = 0.0f, bool loop = false);
+		float curve = 1.0f, float startCycle = 0.0f, bool loop = false,
+		float fadeOut = 0.0f);
+
+	// Queue ONE follow-up sequence on a live slot's SAME source model. When the
+	// current one-shot finishes, the slot re-points to this sequence in place
+	// (no model respawn, no fade dip) instead of retiring. One-deep: a queued
+	// advance clears the queue, so re-queue each step of a longer chain.
+	void  QueueGestureNext(int slot, const char* seqName, bool loop = false);
 
 	void  StopGesture(int slot);
 	void  StopAllGestures(void);
@@ -224,6 +237,8 @@ public:
 
 private:
 	void  RetireGesture(int slot);   // deactivates + removes a source model if present
+	bool  RepointGesture(int slot, const char* seqName, bool loop, float now);  // in-place swap on the same model; restarts cycle, preserves weight
+	bool  AdvanceGestureToNext(int slot, float now);  // consume the queued nextSeq via RepointGesture; false if none/bad
 	void  ApplyGestureFromModel(C_BaseAnimating* pSource, int seq, float cycle,
 		float weight, float currentTime, Vector pos[], Quaternion q[]);
 

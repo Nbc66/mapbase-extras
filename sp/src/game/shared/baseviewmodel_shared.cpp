@@ -793,7 +793,7 @@ bool CBaseViewModel::GetAttachmentVelocity( int number, Vector &originVel, Quate
 // ====================== GESTURES ======================
 int CBaseViewModel::PlayGesture(const char* seqName, float speed, float peak,
 	float speedIn, float speedOut, float curve,
-	float startCycle, bool loop)
+	float startCycle, bool loop, float fadeOut)
 {
 	int seq = LookupSequence(seqName);
 	if (seq < 0)
@@ -810,14 +810,19 @@ int CBaseViewModel::PlayGesture(const char* seqName, float speed, float peak,
 		g.pSource = NULL;
 		g.modelIndex = GetModelIndex();
 		g.startTime = gpGlobals->curtime;
+		g.cycleStartTime = gpGlobals->curtime;
 		g.startCycle = startCycle;
 		g.speed = speed;
 		g.peakOffset = peak;
 		g.speedIn = speedIn;
 		g.speedOut = speedOut;
 		g.curve = curve;
+		g.fadeOutDur = fadeOut;
+		g.fadeOutStart = -1.0f;
 		g.loop = loop;
 		g.active = true;
+		g.nextSeq[0] = '\0';   // fresh slot: no follow-up queued
+		g.nextLoop = false;
 		return i;
 	}
 	return -1;
@@ -825,7 +830,7 @@ int CBaseViewModel::PlayGesture(const char* seqName, float speed, float peak,
 
 int CBaseViewModel::PlayGestureFromModel(const char* modelName, const char* seqName,
 	float speed, float peak, float speedIn,
-	float speedOut, float curve, float startCycle, bool loop)
+	float speedOut, float curve, float startCycle, bool loop, float fadeOut)
 {
 	C_AttachmentRenderable* pSrc = new C_AttachmentRenderable;
 	if (!pSrc->InitializeAsClientEntity(modelName, RENDER_GROUP_VIEW_MODEL_OPAQUE))
@@ -851,9 +856,13 @@ int CBaseViewModel::PlayGestureFromModel(const char* modelName, const char* seqN
 		if (m_Gestures[i].active) continue;
 		vmgesture_t& g = m_Gestures[i];
 		g.pSource = pSrc;  g.sequence = seq;  g.modelIndex = -1;
-		g.startTime = gpGlobals->curtime;  g.startCycle = startCycle;
+		g.startTime = gpGlobals->curtime;  g.cycleStartTime = gpGlobals->curtime;
+		g.startCycle = startCycle;
 		g.speed = speed;  g.peakOffset = peak;  g.speedIn = speedIn;
 		g.speedOut = speedOut;  g.curve = curve;  g.loop = loop;  g.active = true;
+		g.fadeOutDur = fadeOut;  g.fadeOutStart = -1.0f;
+		g.nextSeq[0] = '\0';   // fresh slot: no follow-up queued
+		g.nextLoop = false;
 		pSrc->ResetSequence(seq);
 		pSrc->SetCycle(startCycle);
 		return i;
@@ -937,7 +946,7 @@ float CBaseViewModel::ComputeGestureCycle(const vmgesture_t& g, float now)
 	CStudioHdr* hdr = src->GetModelPtr();
 	float rate = hdr ? src->GetSequenceCycleRate(hdr, g.sequence) : 1.0f;
 
-	float c = g.startCycle + (now - g.startTime) * rate * g.speed;
+	float c = g.startCycle + (now - g.cycleStartTime) * rate * g.speed;
 	if (g.loop)  
 		c -= floorf(c);
 	else
@@ -949,11 +958,91 @@ void CBaseViewModel::RetireGesture(int slot)
 {
 	vmgesture_t& g = m_Gestures[slot];
 	g.active = false;
+	g.nextSeq[0] = '\0';   // clear queue so a recycled slot doesn't inherit it
+	g.nextLoop = false;
+	g.fadeOutStart = -1.0f;
 	if (g.pSource)
 	{
 		g.pSource->Remove();
 		g.pSource = NULL;
 	}
+}
+
+// Queue one follow-up sequence on a live slot. Stored by NAME; resolved against
+// the slot's own model (pSource for the foreign path, the VM for the layer path)
+// at advance time. No-op if the slot isn't active.
+void CBaseViewModel::QueueGestureNext(int slot, const char* seqName, bool loop)
+{
+	if (slot < 0 || slot >= MAX_VM_GESTURES)
+		return;
+	vmgesture_t& g = m_Gestures[slot];
+	if (!g.active)
+		return;   // nothing to chain onto
+	if (!seqName || !*seqName)
+		return;
+
+	// A loop never reaches cycle>=1, so it would never auto-consume a queue.
+	// Interrupt it NOW: repoint to the requested sequence immediately (same model,
+	// weight preserved). Held idles are short/near-static, so the interrupt frame is
+	// ~the held pose -- no need to play the idle cycle out. To return to a loop
+	// afterward, queue it again: the slot is now a one-shot and will defer normally.
+	if (g.loop)
+	{
+		if (!RepointGesture(slot, seqName, loop, gpGlobals->curtime))
+			RetireGesture(slot);   // bad sequence name -> nothing to play, end the gesture
+		return;
+	}
+
+	// One-shot: defer. It advances when the current animation completes (cycle>=1).
+	V_strncpy(g.nextSeq, seqName, sizeof(g.nextSeq));
+	g.nextLoop = loop;
+}
+
+// In-place repoint of a live slot to a sequence on its SAME model. Reuses pSource
+// (ResetSequence, no Remove), restarts the cycle clock from 0, and preserves the
+// weight clock (startTime) so the held weight doesn't dip. Does NOT touch the queue.
+// This is the shared core behind both the queue-advance and the loop-interrupt.
+bool CBaseViewModel::RepointGesture(int slot, const char* seqName, bool loop, float now)
+{
+	vmgesture_t& g = m_Gestures[slot];
+
+	// Resolve on the SAME model that owns this slot's pose (foreign reuses pSource,
+	// layer uses the VM). This is a sequence swap, NOT a model swap.
+	C_BaseAnimating* src = g.pSource ? g.pSource : this;
+	int seq = src->LookupSequence(seqName);
+	if (seq < 0)
+	{
+		DevWarning("RepointGesture: no sequence '%s' on %s\n", seqName, src->GetModelName());
+		return false;
+	}
+
+	g.sequence = seq;
+	g.loop = loop;
+	g.startCycle = 0.0f;
+	g.cycleStartTime = now;     // restart cycle from 0; startTime (weight clock) untouched
+	g.fadeOutStart = -1.0f;     // fresh sequence: clear any partial end-fade (fadeOutDur carries)
+
+	if (g.pSource)
+	{
+		g.pSource->ResetSequence(seq);   // re-point the SAME source model; do NOT Remove
+		g.pSource->SetCycle(0.0f);
+	}
+	return true;
+}
+
+// Consume the one-deep queue when a one-shot finishes (cycle>=1): repoint to
+// nextSeq, then clear the queue. Returns false if nothing valid is queued (the
+// caller then retires the slot).
+bool CBaseViewModel::AdvanceGestureToNext(int slot, float now)
+{
+	vmgesture_t& g = m_Gestures[slot];
+	if (!g.nextSeq[0])
+		return false;
+
+	bool ok = RepointGesture(slot, g.nextSeq, g.nextLoop, now);
+	g.nextSeq[0] = '\0';   // one-deep: queue consumed (even on a bad name -> caller retires)
+	g.nextLoop = false;
+	return ok;
 }
 
 void CBaseViewModel::StandardBlendingRules(CStudioHdr* hdr, Vector pos[],
@@ -994,8 +1083,8 @@ void CBaseViewModel::StandardBlendingRules(CStudioHdr* hdr, Vector pos[],
 			}
 		}
 
-		const float weight = ComputeGestureWeight(g, currentTime);
-		const float cycle = ComputeGestureCycle(g, currentTime);
+		float weight = ComputeGestureWeight(g, currentTime);
+		float cycle = ComputeGestureCycle(g, currentTime);
 
 		// A non-looping gesture finishes when its ANIMATION completes, not when the
 		// weight envelope happens to reach zero. Only use the weight-faded-out retire
@@ -1003,23 +1092,53 @@ void CBaseViewModel::StandardBlendingRules(CStudioHdr* hdr, Vector pos[],
 		// fade out.
 		const bool pastPeak = (currentTime >= g.startTime + g.peakOffset);
 
-		bool retire = false;
 		if (g.loop)
-			retire = pastPeak && (weight <= 0.0f);   // looping: only a deliberate fade-out ends it
-		else
-			retire = (cycle >= 1.0f);                // one-shot: play to the end of the animation
-		if (retire) { RetireGesture(i); continue; }
+		{
+			// looping: only a deliberate fade-out ends it
+			if (pastPeak && weight <= 0.0f) { RetireGesture(i); continue; }
+		}
+		else if (cycle >= 1.0f)
+		{
+			// One-shot reached its last frame. Priority order:
+			//  1) queued follow-up -> re-point in place, keep going THIS frame (no gap);
+			//  2) end-fade-out     -> hold the last frame and ramp weight 1->0 so the
+			//                         arm lerps back to the LIVE weapon pose (the blend
+			//                         target BaseClass already wrote into pos[]/q[]);
+			//                         weapon-agnostic, needs no per-weapon return anim;
+			//  3) otherwise         -> snap-retire (legacy, when no fade authored).
+			if (AdvanceGestureToNext(i, currentTime))
+			{
+				cycle = ComputeGestureCycle(g, currentTime);    // ~0 for the new sequence
+				weight = ComputeGestureWeight(g, currentTime);  // unchanged: weight clock preserved
+			}
+			else if (g.fadeOutDur > 0.0f)
+			{
+				if (g.fadeOutStart < 0.0f)
+					g.fadeOutStart = currentTime;        // stamp the moment the fade begins
+
+				const float fadeT = (currentTime - g.fadeOutStart) / g.fadeOutDur;
+				if (fadeT >= 1.0f) { RetireGesture(i); continue; }   // fully back on the gun
+
+				// cycle is already clamped to 1.0 (one-shot) -> last frame held.
+				weight *= (1.0f - fadeT);                // ramp the held weight down to 0
+			}
+			else
+			{
+				RetireGesture(i);
+				continue;
+			}
+		}
 		if (weight <= 0.0f) continue;   // skip a zero-weight frame, but DON'T retire
 
-		// ---- apply the gesture pose (this is what was missing) ----
+		// ---- apply the gesture pose ----
 		if (g.pSource == NULL)
 		{
-			// local (layer) gesture — sequence lives in the weapon's own model
+			// local (layer) gesture sequence lives in the weapon's own model
 			boneSetup.AccumulatePose(pos, q, g.sequence, cycle, weight, currentTime, NULL);
 		}
 		else
 		{
-			// separate-model gesture — evaluate source, transfer bones (weightlist-masked)
+			// separate-model gesture evaluate source, transfer bones (weightlist-masked)
 			g.pSource->SetCycle(cycle);   // keep its rendered mesh's frame in sync with the pose
 			ApplyGestureFromModel(g.pSource, g.sequence, cycle, weight, currentTime, pos, q);
 		}
@@ -1123,25 +1242,62 @@ void CBaseViewModel::CalcIronsights(Vector& pos, QAngle& ang)
 }
 
 #ifdef CLIENT_DLL
-CON_COMMAND_F( vm_testgesturemodel, "Test a separate-model gesture: vm_testgesturemodel <model> <seq> [loop]", FCVAR_CHEAT )
+CON_COMMAND_F(vm_testgesturemodel, "vm_testgesturemodel <model> <seq> [loop] [speedIn] [peak] [speedOut] [curve] [startCycle] [fadeOut]", FCVAR_CHEAT)
 {
-	if (args.ArgC() < 3)
-	{
-		Msg("Usage: vm_testgesturemodel <model> <sequence> [loop]\n");
-		return;
-	}
-
+	if (args.ArgC() < 3) { Msg("usage: <model> <seq> [loop] [speedIn] [peak] [speedOut] [curve] [startCycle] [fadeOut]\n"); return; }
 	C_BasePlayer* pPlayer = C_BasePlayer::GetLocalPlayer();
 	if (!pPlayer) return;
+	C_BaseViewModel* pVM = pPlayer->GetViewModel();
+	if (!pVM) return;
 
+	bool  loop = (args.ArgC() >= 4) ? atoi(args.Arg(3)) != 0 : false;
+	float speedIn = (args.ArgC() >= 5) ? atof(args.Arg(4)) : 1.0f;
+	float peak = (args.ArgC() >= 6) ? atof(args.Arg(5)) : 0.4f;
+	float speedOut = (args.ArgC() >= 7) ? atof(args.Arg(6)) : 1.0f;
+	float curve = (args.ArgC() >= 8) ? atof(args.Arg(7)) : 1.0f;
+	float startCyc = (args.ArgC() >= 9) ? atof(args.Arg(8)) : 0.0f;
+	float fadeOut = (args.ArgC() >= 10) ? atof(args.Arg(9)) : 0.0f;
+
+	int slot = pVM->PlayGestureFromModel(args.Arg(1), args.Arg(2),
+		1.0f /*speed*/, peak, speedIn, speedOut, curve, startCyc, loop, fadeOut);
+	Msg("slot %d  speedIn=%.2f peak=%.2f speedOut=%.2f curve=%.2f startCycle=%.2f loop=%d fadeOut=%.2f\n",
+		slot, speedIn, peak, speedOut, curve, startCyc, loop, fadeOut);
+}
+
+CON_COMMAND_F(vm_testgesturechain, "vm_testgesturechain <model> <seq1_oneshot> <seq2_loop> -- play seq1 then auto-advance to looping seq2 on the SAME source model (pullout->idle test)", FCVAR_CHEAT)
+{
+	if (args.ArgC() < 4) { Msg("usage: <model> <seq1_oneshot> <seq2_loop>\n"); return; }
+	C_BasePlayer* pPlayer = C_BasePlayer::GetLocalPlayer();
+	if (!pPlayer) return;
 	C_BaseViewModel* pVM = pPlayer->GetViewModel();
 	if (!pVM) { Msg("no viewmodel\n"); return; }
 
-	bool loop = (args.ArgC() >= 4) ? (atoi(args.Arg(3)) != 0) : false;
 	int slot = pVM->PlayGestureFromModel(args.Arg(1), args.Arg(2),
-		1.0f, 0.4f, 1.0f, 1.0f, 1.0f, 0.0f, loop);
-	Msg("PlayGestureFromModel('%s', '%s', loop=%d) -> slot %d\n",
-		args.Arg(1), args.Arg(2), loop, slot);
+		1.0f /*speed*/, 0.4f /*peak*/, 1.0f /*speedIn*/, 1.0f /*speedOut*/,
+		1.0f /*curve*/, 0.0f /*startCycle*/, false /*one-shot*/);
+	if (slot < 0) { Msg("play failed\n"); return; }
+
+	pVM->QueueGestureNext(slot, args.Arg(3), true /*loop the idle*/);
+	Msg("slot %d: '%s' (one-shot) -> '%s' (loop)\n", slot, args.Arg(2), args.Arg(3));
+}
+
+CON_COMMAND_F(vm_testgestureinterrupt, "vm_testgestureinterrupt <slot> <oneshot_seq> [return_loop_seq] -- insta-interrupt a looping gesture on <slot> with a one-shot, optionally returning to a loop", FCVAR_CHEAT)
+{
+	if (args.ArgC() < 3) { Msg("usage: <slot> <oneshot_seq> [return_loop_seq]\n"); return; }
+	C_BasePlayer* pPlayer = C_BasePlayer::GetLocalPlayer();
+	if (!pPlayer) return;
+	C_BaseViewModel* pVM = pPlayer->GetViewModel();
+	if (!pVM) { Msg("no viewmodel\n"); return; }
+
+	int slot = atoi(args.Arg(1));
+	if (!pVM->IsGestureActive(slot)) { Msg("slot %d not active\n", slot); return; }
+
+	pVM->QueueGestureNext(slot, args.Arg(2), false);    // loop -> insta-stop, play one-shot NOW
+	if (args.ArgC() >= 4)
+		pVM->QueueGestureNext(slot, args.Arg(3), true); // one-shot ends -> back to the loop
+
+	Msg("slot %d: interrupt -> '%s'%s\n", slot, args.Arg(2),
+		args.ArgC() >= 4 ? " -> (loop) again" : "");
 }
 
 CON_COMMAND_F( vm_testgesture, "Play a viewmodel gesture by sequence name", FCVAR_CHEAT )
