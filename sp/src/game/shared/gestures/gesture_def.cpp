@@ -142,6 +142,7 @@ bool CGestureRegistry::ParseFile(const char* pszPath)
 		}
 
 		pDef->bLoop = pBlock->GetInt("loop", 0) != 0;
+		V_strncpy(pDef->szNext, pBlock->GetString("next", ""), sizeof(pDef->szNext));
 		pDef->speed = pBlock->GetFloat("speed", 1.0f);
 		pDef->peak = pBlock->GetFloat("peak", 0.4f);
 		pDef->speedIn = pBlock->GetFloat("speed_in", 1.0f);

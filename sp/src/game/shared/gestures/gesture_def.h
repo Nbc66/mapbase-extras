@@ -29,11 +29,12 @@ struct GestureDef_t
 		szName[0] = '\0';
 		szModel[0] = '\0';
 		szSequence[0] = '\0';
+		szNext[0] = '\0';
 	}
 
 	// FROZEN IDENTITY KEY. This is the KeyValues block name and the thing you
 	// call by (PlayGestureByName). It is also the wire identity via its index.
-	// NEVER rename a shipped gesture, and NEVER reorder the manifest/entries —
+	// NEVER rename a shipped gesture, and NEVER reorder the manifest/entries
 	// both shift the index and break any networked reference. Append-only.
 	char  szName[64];
 
@@ -47,6 +48,14 @@ struct GestureDef_t
 	char  szSequence[64];
 
 	bool  bLoop;
+
+	// Optional follow-up: the NAME of another gesture def to auto-queue after this
+	// one's sequence finishes (held item: this = pullout one-shot, szNext = idle
+	// loop). It's a def reference, not a bare sequence, so the follow-up's loop-ness
+	// is just that def's own bLoop -- nothing extra to store here. The queue is a
+	// same-model sequence swap, so szNext should name a def whose sequence lives in
+	// THIS def's model. Empty = no follow-up.
+	char  szNext[64];
 
 	// Envelope / cycle params (defaults match PlayGesture's defaults).
 	float speed, peak, speedIn, speedOut, curve, startCycle;

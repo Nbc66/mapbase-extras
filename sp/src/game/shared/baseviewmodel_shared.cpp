@@ -10,6 +10,7 @@
 
 #ifdef FP
 #include "basemodularweapon.h"
+#include "gestures/gesture_def.h"   // GESTURES: registry + GestureDef_t for the shared front door
 #endif // FP
 
 
@@ -41,6 +42,10 @@ extern ConVar in_forceuser;
 #define VIEWMODEL_ANIMATION_PARITY_BITS 3
 #define SCREEN_OVERLAY_MATERIAL "vgui/screens/vgui_overlay"
 
+#ifdef FP
+#define VIEWMODEL_GESTURE_PARITY_BITS 3   // GESTURES: bump-to-refire trigger parity
+#endif
+
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
@@ -64,6 +69,15 @@ CBaseViewModel::CBaseViewModel()
 	m_nViewModelIndex	= 0;
 
 	m_nAnimationParity	= 0;
+
+#ifdef FP
+	// GESTURES: server->client trigger state (parity-driven; see header).
+	m_iGesturePlayDef    = INVALID_GESTURE_DEF_INDEX;
+	m_iGesturePlaySlot   = 0;
+	m_nGesturePlayParity = 0;
+	m_iGestureStopSlot   = -1;
+	m_nGestureStopParity = 0;
+#endif // FP
 }
 
 //-----------------------------------------------------------------------------
@@ -651,6 +665,35 @@ static void RecvProxy_Weapon( const CRecvProxyData *pData, void *pStruct, void *
 }
 #endif
 
+#if defined( CLIENT_DLL ) && defined( FP )
+// GESTURES: the play/stop triggers each fire on a PARITY change, not a value change,
+// so re-sending the same def/slot still re-plays it. The payload (def/slot) is sent
+// before its parity in the table, so it's already current when these run.
+static void RecvProxy_GesturePlayParity( const CRecvProxyData *pData, void *pStruct, void *pOut )
+{
+	CBaseViewModel *pVM = (CBaseViewModel *)pStruct;
+	int *pParity   = (int *)pOut;
+	int  newParity = pData->m_Value.m_Int;
+	if ( *pParity != newParity )
+	{
+		*pParity = newParity;
+		pVM->OnGesturePlayParityChanged();
+	}
+}
+
+static void RecvProxy_GestureStopParity( const CRecvProxyData *pData, void *pStruct, void *pOut )
+{
+	CBaseViewModel *pVM = (CBaseViewModel *)pStruct;
+	int *pParity   = (int *)pOut;
+	int  newParity = pData->m_Value.m_Int;
+	if ( *pParity != newParity )
+	{
+		*pParity = newParity;
+		pVM->OnGestureStopParityChanged();
+	}
+}
+#endif // CLIENT_DLL && FP
+
 
 LINK_ENTITY_TO_CLASS( viewmodel, CBaseViewModel );
 
@@ -668,6 +711,16 @@ BEGIN_NETWORK_TABLE_NOBASE(CBaseViewModel, DT_BaseViewModel)
 	SendPropInt		(SENDINFO(m_nAnimationParity), 3, SPROP_UNSIGNED ),
 	SendPropEHandle (SENDINFO(m_hWeapon)),
 	SendPropEHandle (SENDINFO(m_hOwner)),
+
+#ifdef FP
+	// GESTURES: server->client triggers. Payload BEFORE its parity (the parity proxy
+	// reads the payload). Stop slot is signed (-1 = stop all).
+	SendPropInt( SENDINFO( m_iGesturePlayDef ),    16, SPROP_UNSIGNED ),
+	SendPropInt( SENDINFO( m_iGesturePlaySlot ),    4, SPROP_UNSIGNED ),
+	SendPropInt( SENDINFO( m_nGesturePlayParity ),  VIEWMODEL_GESTURE_PARITY_BITS, SPROP_UNSIGNED ),
+	SendPropInt( SENDINFO( m_iGestureStopSlot ),    5 ),
+	SendPropInt( SENDINFO( m_nGestureStopParity ),  VIEWMODEL_GESTURE_PARITY_BITS, SPROP_UNSIGNED ),
+#endif // FP
 
 	SendPropInt( SENDINFO( m_nNewSequenceParity ), EF_PARITY_BITS, SPROP_UNSIGNED ),
 	SendPropInt( SENDINFO( m_nResetEventsParity ), EF_PARITY_BITS, SPROP_UNSIGNED ),
@@ -687,6 +740,15 @@ BEGIN_NETWORK_TABLE_NOBASE(CBaseViewModel, DT_BaseViewModel)
 	RecvPropInt		(RECVINFO(m_nAnimationParity)),
 	RecvPropEHandle (RECVINFO(m_hWeapon), RecvProxy_Weapon ),
 	RecvPropEHandle (RECVINFO(m_hOwner)),
+
+#ifdef FP
+	// GESTURES: must mirror the send order above (payload before its parity proxy).
+	RecvPropInt( RECVINFO( m_iGesturePlayDef ) ),
+	RecvPropInt( RECVINFO( m_iGesturePlaySlot ) ),
+	RecvPropInt( RECVINFO( m_nGesturePlayParity ), 0, RecvProxy_GesturePlayParity ),
+	RecvPropInt( RECVINFO( m_iGestureStopSlot ) ),
+	RecvPropInt( RECVINFO( m_nGestureStopParity ), 0, RecvProxy_GestureStopParity ),
+#endif // FP
 
 	RecvPropInt( RECVINFO( m_nNewSequenceParity )),
 	RecvPropInt( RECVINFO( m_nResetEventsParity )),
@@ -793,7 +855,7 @@ bool CBaseViewModel::GetAttachmentVelocity( int number, Vector &originVel, Quate
 // ====================== GESTURES ======================
 int CBaseViewModel::PlayGesture(const char* seqName, float speed, float peak,
 	float speedIn, float speedOut, float curve,
-	float startCycle, bool loop, float fadeOut)
+	float startCycle, bool loop, float fadeOut, int forceSlot)
 {
 	int seq = LookupSequence(seqName);
 	if (seq < 0)
@@ -801,8 +863,17 @@ int CBaseViewModel::PlayGesture(const char* seqName, float speed, float peak,
 		DevWarning("CBaseViewModel: no sequence '%s' on current VM model\n", seqName);
 		return -1;
 	}
+
+	// forceSlot pins the caller's channel: retire whatever is there and use exactly
+	// that slot (so a server-chosen slot maps 1:1). forceSlot < 0 = first free slot.
+	const bool bForced = (forceSlot >= 0 && forceSlot < MAX_VM_GESTURES);
+	if (bForced)
+		RetireGesture(forceSlot);
+
 	for (int i = 0; i < MAX_VM_GESTURES; ++i)
 	{
+		if (bForced && i != forceSlot)
+			continue;
 		if (m_Gestures[i].active)
 			continue;
 		vmgesture_t& g = m_Gestures[i];
@@ -830,12 +901,12 @@ int CBaseViewModel::PlayGesture(const char* seqName, float speed, float peak,
 
 int CBaseViewModel::PlayGestureFromModel(const char* modelName, const char* seqName,
 	float speed, float peak, float speedIn,
-	float speedOut, float curve, float startCycle, bool loop, float fadeOut)
+	float speedOut, float curve, float startCycle, bool loop, float fadeOut, int forceSlot)
 {
 	C_AttachmentRenderable* pSrc = new C_AttachmentRenderable;
 	if (!pSrc->InitializeAsClientEntity(modelName, RENDER_GROUP_VIEW_MODEL_OPAQUE))
 	{
-		pSrc->Release(); 
+		pSrc->Release();
 		return -1;
 	}
 	pSrc->SetParent(this);                 // view-space, glued to the VM (bob/sway inherited)
@@ -851,8 +922,15 @@ int CBaseViewModel::PlayGestureFromModel(const char* modelName, const char* seqN
 		return -1;
 	}
 
+	// forceSlot pins the caller's channel (retire what's there, use exactly that slot
+	// -- removes the old source model). forceSlot < 0 = first free slot.
+	const bool bForced = (forceSlot >= 0 && forceSlot < MAX_VM_GESTURES);
+	if (bForced)
+		RetireGesture(forceSlot);
+
 	for (int i = 0; i < MAX_VM_GESTURES; ++i)
 	{
+		if (bForced && i != forceSlot) continue;
 		if (m_Gestures[i].active) continue;
 		vmgesture_t& g = m_Gestures[i];
 		g.pSource = pSrc;  g.sequence = seq;  g.modelIndex = -1;
@@ -914,20 +992,63 @@ void CBaseViewModel::ApplyGestureFromModel(C_BaseAnimating* pSource, int seq, fl
 	}
 }
 
-void CBaseViewModel::StopGesture(int slot)
-{
-	if (slot >= 0 && slot < MAX_VM_GESTURES)
-		RetireGesture(slot);
-}
-
-void CBaseViewModel::StopAllGestures(void)
-{
-	for (int i = 0; i < MAX_VM_GESTURES; ++i) RetireGesture(i);
-}
-
 bool CBaseViewModel::IsGestureActive(int slot) const
 {
 	return (slot >= 0 && slot < MAX_VM_GESTURES) ? m_Gestures[slot].active : false;
+}
+
+// Resolve a registry def to a concrete play (layer vs separate-model path) using
+// the def's own envelope params, into 'slot' (-1 = first free). Then auto-queue the
+// def's szNext follow-up, reading the follow-up's loop-ness off ITS OWN bLoop.
+// Client executor behind both the play recv proxy and PlayGestureByName.
+int CBaseViewModel::PlayGestureDefIndex(unsigned short defIndex, int slot)
+{
+	const GestureDef_t* pDef = CGestureRegistry::Instance().FindByIndex(defIndex);
+	if (!pDef)
+	{
+		DevWarning("PlayGestureDefIndex: bad def index %d\n", defIndex);
+		return -1;
+	}
+
+	int played = pDef->UsesModel()
+		? PlayGestureFromModel(pDef->szModel, pDef->szSequence,
+			pDef->speed, pDef->peak, pDef->speedIn, pDef->speedOut,
+			pDef->curve, pDef->startCycle, pDef->bLoop, 0.0f /*fadeOut*/, slot)
+		: PlayGesture(pDef->szSequence,
+			pDef->speed, pDef->peak, pDef->speedIn, pDef->speedOut,
+			pDef->curve, pDef->startCycle, pDef->bLoop, 0.0f /*fadeOut*/, slot);
+
+	if (played < 0)
+		return -1;
+
+	// Auto-queue the follow-up def (held item: pullout -> idle). The follow-up's
+	// loop flag is just that def's bLoop -- no separate field. Same-model swap.
+	if (pDef->szNext[0])
+	{
+		const GestureDef_t* pNext = CGestureRegistry::Instance().FindByName(pDef->szNext);
+		if (pNext)
+			QueueGestureNext(played, pNext->szSequence, pNext->bLoop);
+		else
+			DevWarning("PlayGestureDefIndex: '%s' names a missing next def '%s'\n",
+				pDef->szName, pDef->szNext);
+	}
+
+	return played;
+}
+
+// Recv-proxy hooks (client side of the server triggers).
+void CBaseViewModel::OnGesturePlayParityChanged(void)
+{
+	PlayGestureDefIndex((unsigned short)m_iGesturePlayDef, m_iGesturePlaySlot);
+}
+
+void CBaseViewModel::OnGestureStopParityChanged(void)
+{
+	// StopGesture/StopAllGestures run directly here (client side of the split).
+	if (m_iGestureStopSlot < 0)
+		StopAllGestures();
+	else
+		StopGesture(m_iGestureStopSlot);
 }
 
 float CBaseViewModel::ComputeGestureWeight(const vmgesture_t& g, float now)
@@ -1239,6 +1360,54 @@ void CBaseViewModel::CalcIronsights(Vector& pos, QAngle& ang)
 
 	pos += (newPos - pos) * exp;
 	ang += (newAng - ang) * exp;
+}
+
+// ====================== GESTURES: server-callable front door ======================
+// Shared. The work happens on the client; the server can't touch the slot pipeline,
+// so it just nets a parity-tagged trigger and the client recv proxy runs the same
+// client call (PlayGestureDefIndex / RetireGesture). Calling these from client code
+// runs them directly. Cosmetic only -- do NOT call from unguarded predicted code on
+// both DLLs (it would net AND run locally); for predicted client play call
+// PlayGestureDefIndex directly under prediction->IsFirstTimePredicted().
+void CBaseViewModel::PlayGestureByName(const char* pszGestureName, int slot)
+{
+	CGestureRegistry::Instance().EnsureLoaded();
+	unsigned short idx = CGestureRegistry::Instance().FindIndexByName(pszGestureName);
+	if (idx == INVALID_GESTURE_DEF_INDEX)
+	{
+		DevWarning("PlayGestureByName: no gesture def '%s'\n", pszGestureName ? pszGestureName : "(null)");
+		return;
+	}
+
+#ifdef CLIENT_DLL
+	PlayGestureDefIndex(idx, slot);                 // client: run it now
+#else
+	m_iGesturePlayDef  = idx;                       // server: net it (payload, then parity)
+	m_iGesturePlaySlot = slot;
+	m_nGesturePlayParity = (m_nGesturePlayParity + 1) & ((1 << VIEWMODEL_GESTURE_PARITY_BITS) - 1);
+#endif
+}
+
+void CBaseViewModel::StopGesture(int slot)
+{
+#ifdef CLIENT_DLL
+	if (slot >= 0 && slot < MAX_VM_GESTURES)
+		RetireGesture(slot);                        // client: retire it now
+#else
+	m_iGestureStopSlot = slot;                      // server: net it
+	m_nGestureStopParity = (m_nGestureStopParity + 1) & ((1 << VIEWMODEL_GESTURE_PARITY_BITS) - 1);
+#endif
+}
+
+void CBaseViewModel::StopAllGestures(void)
+{
+#ifdef CLIENT_DLL
+	for (int i = 0; i < MAX_VM_GESTURES; ++i)
+		RetireGesture(i);                           // client: retire everything now
+#else
+	m_iGestureStopSlot = -1;                        // server: -1 = stop all
+	m_nGestureStopParity = (m_nGestureStopParity + 1) & ((1 << VIEWMODEL_GESTURE_PARITY_BITS) - 1);
+#endif
 }
 
 #ifdef CLIENT_DLL

@@ -111,6 +111,20 @@ public:
 
 #ifdef FP
 	void		CalcIronsights(Vector& pos, QAngle& ang);
+
+	// >>> GESTURES: server-callable, mirrors the client functions. Gestures only
+	// execute on the client (slots + source models are client-only), so on the
+	// SERVER these just net a tiny parity-tagged trigger; the client recv proxy
+	// then runs the matching client call. On the CLIENT they run it directly. So
+	// the same function works whether you call it from server or client code.
+	//
+	// 'slot' is the channel you play into (server picks it, client honors it) so
+	// you can stop/replace that exact gesture later. Interrupt = play another def
+	// into the same slot. A held item's pullout->idle chain lives in the DEF
+	// (GestureDef_t::szNext), so PLAY of one def is enough -- no second call.
+	void		PlayGestureByName(const char* pszGestureName, int slot = 0);
+	void		StopGesture(int slot);      // retire one slot
+	void		StopAllGestures(void);      // retire every slot
 #endif // FP
 
 	virtual bool			IsSelfAnimating()
@@ -212,10 +226,12 @@ public:
 	virtual bool			GetAttachmentVelocity( int number, Vector &originVel, Quaternion &angleVel );
 #ifdef FP
 	// >>> GESTURES
+	// forceSlot >= 0 plays into exactly that slot (retiring whatever is there) so a
+	// server-chosen channel maps 1:1; forceSlot < 0 picks the first free slot.
 	int   PlayGesture(const char* seqName, float speed = 1.0f, float peak = 0.4f,
 	float speedIn = 1.0f, float speedOut = 1.0f,
 	float curve = 1.0f, float startCycle = 0.0f, bool loop = false,
-	float fadeOut = 0.0f);
+	float fadeOut = 0.0f, int forceSlot = -1);
 
 	// Spawn a source model and play a sequence FROM it; its bones transfer onto us
 	// (full reuse of the slot/envelope/cycle pipeline). Same params as PlayGesture.
@@ -223,7 +239,13 @@ public:
 		float speed = 1.0f, float peak = 0.4f,
 		float speedIn = 1.0f, float speedOut = 1.0f,
 		float curve = 1.0f, float startCycle = 0.0f, bool loop = false,
-		float fadeOut = 0.0f);
+		float fadeOut = 0.0f, int forceSlot = -1);
+
+	// Resolve a gesture DEF (registry index) to a concrete play -- layer vs
+	// separate-model path, def envelope params -- and run it on this viewmodel NOW.
+	// Auto-queues the def's szNext follow-up (pullout->idle). Never networks; this
+	// is the client executor behind both the play recv proxy and PlayGestureByName.
+	int   PlayGestureDefIndex(unsigned short defIndex, int slot = -1);
 
 	// Queue ONE follow-up sequence on a live slot's SAME source model. When the
 	// current one-shot finishes, the slot re-points to this sequence in place
@@ -231,9 +253,11 @@ public:
 	// advance clears the queue, so re-queue each step of a longer chain.
 	void  QueueGestureNext(int slot, const char* seqName, bool loop = false);
 
-	void  StopGesture(int slot);
-	void  StopAllGestures(void);
 	bool  IsGestureActive(int slot) const;
+
+	// Recv-proxy hooks: a networked gesture trigger changed -> run the client call.
+	void  OnGesturePlayParityChanged(void);   // play m_iGesturePlayDef into m_iGesturePlaySlot
+	void  OnGestureStopParityChanged(void);    // stop m_iGestureStopSlot (<0 = all)
 
 private:
 	void  RetireGesture(int slot);   // deactivates + removes a source model if present
@@ -266,6 +290,18 @@ private:
 
 	// Used to force restart on client, only needs a few bits
 	CNetworkVar( int, m_nAnimationParity );
+
+#ifdef FP
+	// GESTURES: server->client triggers. Each is a payload + a parity; bumping the
+	// parity (even with the same payload) re-fires on the client, same idea as
+	// m_nAnimationParity. Cosmetic only -- never put these in a prediction table.
+	// Payload is sent BEFORE its parity so it's current when the parity proxy runs.
+	CNetworkVar( int, m_iGesturePlayDef );    // registry def index to play
+	CNetworkVar( int, m_iGesturePlaySlot );   // slot/channel to play it into
+	CNetworkVar( int, m_nGesturePlayParity );
+	CNetworkVar( int, m_iGestureStopSlot );   // slot to retire; <0 = stop all
+	CNetworkVar( int, m_nGestureStopParity );
+#endif // FP
 
 	// Weapon art
 	string_t				m_sVMName;			// View model of this weapon

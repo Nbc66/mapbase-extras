@@ -10,6 +10,11 @@
 #include "ammodef.h"
 #include "in_buttons.h"
 
+#ifdef FP
+#include "baseviewmodel_shared.h"      // gesture passthrough -> viewmodel front door
+#include "gestures/gesture_def.h"      // CGestureRegistry::PrecacheAll
+#endif // FP
+
 #ifdef FP_SERVER
 #include "hl2_player.h"
 #endif // FP_SERVER
@@ -148,7 +153,48 @@ void CBaseModularWeapon::Precache(void)
     // PrecacheScriptSound no-op when the asset is already cached, so the
     // duplicate calls across multiple weapon spawns are effectively free.
     CAttachmentDefRegistry::Instance().PrecacheAll();
+
+#ifdef FP
+    // Gesture source models must be precached up front, same as attachments.
+    CGestureRegistry::Instance().PrecacheAll();
+#endif // FP
 }
+
+#ifdef FP
+// ---------------------------------------------------------------------------
+// Gesture passthrough. Resolve the owner's viewmodel and forward to its gesture
+// front door (which handles the server-net / client-run split internally).
+// ---------------------------------------------------------------------------
+void CBaseModularWeapon::PlayGesture(const char* pszGestureName, int slot)
+{
+    CBasePlayer* pPlayer = ToBasePlayer(GetOwner());
+    if (!pPlayer)
+        return;
+    CBaseViewModel* pVM = pPlayer->GetViewModel();
+    if (pVM)
+        pVM->PlayGestureByName(pszGestureName, slot);
+}
+
+void CBaseModularWeapon::StopGesture(int slot)
+{
+    CBasePlayer* pPlayer = ToBasePlayer(GetOwner());
+    if (!pPlayer)
+        return;
+    CBaseViewModel* pVM = pPlayer->GetViewModel();
+    if (pVM)
+        pVM->StopGesture(slot);
+}
+
+void CBaseModularWeapon::StopAllGestures(void)
+{
+    CBasePlayer* pPlayer = ToBasePlayer(GetOwner());
+    if (!pPlayer)
+        return;
+    CBaseViewModel* pVM = pPlayer->GetViewModel();
+    if (pVM)
+        pVM->StopAllGestures();
+}
+#endif // FP
 
 // ---------------------------------------------------------------------------
 // Slot accessors

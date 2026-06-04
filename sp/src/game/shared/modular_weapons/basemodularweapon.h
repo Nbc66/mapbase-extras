@@ -67,6 +67,15 @@ public:
 
     virtual bool  IsBaseModularWeapon(void) const { return true; }
 
+#ifdef FP
+    // Viewmodel gesture passthrough. Forwards to the owner's viewmodel front door,
+    // which nets server->client (or runs locally if called on the client). 'slot'
+    // is the viewmodel gesture channel you play into, so you can stop/replace it.
+    void  PlayGesture(const char* pszGestureName, int slot = 0);
+    void  StopGesture(int slot);
+    void  StopAllGestures(void);
+#endif // FP
+
     virtual char const* GetShootSound(int iIndex) const;
     virtual float       GetDamage(void);
 
