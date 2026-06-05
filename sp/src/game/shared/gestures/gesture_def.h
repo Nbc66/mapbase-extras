@@ -24,7 +24,7 @@ struct GestureDef_t
 	GestureDef_t()
 		: bLoop(false)
 		, speed(1.0f), peak(0.4f), speedIn(1.0f)
-		, speedOut(1.0f), curve(1.0f), startCycle(0.0f)
+		, speedOut(1.0f), curve(1.0f), startCycle(0.0f), fadeOut(0.0f)
 	{
 		szName[0] = '\0';
 		szModel[0] = '\0';
@@ -59,6 +59,11 @@ struct GestureDef_t
 
 	// Envelope / cycle params (defaults match PlayGesture's defaults).
 	float speed, peak, speedIn, speedOut, curve, startCycle;
+
+	// End fade-out length (s). >0 = on the last frame of a one-shot, ramp weight 1->0
+	// over this long so the driven bones slerp back to the live weapon pose (smooth,
+	// weapon-agnostic return). 0 = snap on retire. Keep it short for the put-away.
+	float fadeOut;
 
 	bool UsesModel() const { return szModel[0] != '\0'; }
 };

@@ -149,6 +149,7 @@ bool CGestureRegistry::ParseFile(const char* pszPath)
 		pDef->speedOut = pBlock->GetFloat("speed_out", 1.0f);
 		pDef->curve = pBlock->GetFloat("curve", 1.0f);
 		pDef->startCycle = pBlock->GetFloat("start_cycle", 0.0f);
+		pDef->fadeOut = pBlock->GetFloat("fade_out", 0.0f);
 
 		m_Defs.Insert(pszName, pDef);
 	}

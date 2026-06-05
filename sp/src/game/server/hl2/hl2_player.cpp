@@ -8,6 +8,9 @@
 #include "hl2_player.h"
 #include "globalstate.h"
 #include "game.h"
+#ifdef FP
+#include "modular_weapons/basemodularweapon.h"   // held-flashlight gesture trigger
+#endif
 #include "gamerules.h"
 #include "trains.h"
 #include "basehlcombatweapon_shared.h"
@@ -558,6 +561,11 @@ BEGIN_DATADESC( CHL2_Player )
 	DEFINE_FIELD( m_flNextFlashlightCheckTime, FIELD_TIME ),
 	DEFINE_FIELD( m_flFlashlightPowerDrainScale, FIELD_FLOAT ),
 	DEFINE_FIELD( m_bFlashlightDisabled, FIELD_BOOLEAN ),
+#ifdef FP
+	// Registered so the handheld-flashlight re-arm think can be saved/restored (it's
+	// scheduled from OnRestore). Without this, SetContextThink asserts FUNCTION NOT IN TABLE.
+	DEFINE_THINKFUNC( RedoHeldFlashlightThink ),
+#endif
 
 	DEFINE_FIELD( m_bUseCappedPhysicsDamageTable, FIELD_BOOLEAN ),
 
@@ -2645,6 +2653,20 @@ void CHL2_Player::FlashlightTurnOn( void )
 		return;
 #endif
 
+#ifdef FP
+	// Past the suit/power gates -> if the active weapon opts in (and has no gun-mounted
+	// flashlight attachment, which takes priority), pull out the handheld flashlight.
+	// DEFER the actual light: the gesture's "flashlight_on" anim event -> OnGestureEvent
+	// (server) does the AddEffects(EF_DIMLIGHT), so the light clicks on at the animation
+	// frame, not the keypress.
+	CBaseModularWeapon *pModWeap = ToModularWeapon( GetActiveWeapon() );
+	if ( pModWeap && pModWeap->AllowsHeldFlashlight() && !pModWeap->HasAttachmentInSlot( ATTACHMENT_FLASHLIGHT ) )
+	{
+		pModWeap->PlayGesture( pModWeap->GetHeldFlashlightGesture(), 0 );
+		return;
+	}
+#endif
+
 	AddEffects( EF_DIMLIGHT );
 	EmitSound( "HL2Player.FlashLightOn" );
 
@@ -2663,6 +2685,18 @@ void CHL2_Player::FlashlightTurnOff( void )
 		if( !SuitPower_RemoveDevice( SuitDeviceFlashlight ) )
 			return;
 	}
+
+#ifdef FP
+	// Put the handheld flashlight away (pulldown gesture). DEFER the light-off to the
+	// gesture's "flashlight_off" anim event -> OnGestureEvent (server), so the beam
+	// clicks off mid-pulldown instead of snapping off at the keypress.
+	CBaseModularWeapon *pModWeap = ToModularWeapon( GetActiveWeapon() );
+	if ( pModWeap && pModWeap->AllowsHeldFlashlight() && !pModWeap->HasAttachmentInSlot( ATTACHMENT_FLASHLIGHT ) )
+	{
+		pModWeap->PlayGesture( pModWeap->GetHeldFlashlightPulldownGesture(), 0 );
+		return;
+	}
+#endif
 
 	RemoveEffects( EF_DIMLIGHT );
 	EmitSound( "HL2Player.FlashLightOff" );
@@ -4048,12 +4082,44 @@ void CHL2_Player::UpdateClientData( void )
 
 //---------------------------------------------------------
 //---------------------------------------------------------
+#ifdef FP
+//-----------------------------------------------------------------------------
+// Deferred re-arm of the handheld flashlight after a save restore (see OnRestore).
+//-----------------------------------------------------------------------------
+void CHL2_Player::RedoHeldFlashlightThink( void )
+{
+	// Replay the pullout (which re-sets EF_DIMLIGHT via its anim event). Skip if it was
+	// already turned on some other way during the deferral.
+	if ( !FlashlightIsOn() )
+		FlashlightTurnOn();
+}
+#endif // FP
+
 void CHL2_Player::OnRestore()
 {
 	BaseClass::OnRestore();
 
 #ifdef FP
 	m_AttachmentInventory.OnRestore();
+
+	// The handheld flashlight is a CLIENT-only gesture that isn't saved, so on load the
+	// saved EF_DIMLIGHT comes back "on" with no gesture behind it -- a split state that
+	// crashes when toggled. Turn it cleanly off, then redo the pullout a beat later
+	// (once the client has recreated the viewmodel, so the re-trigger's parity change
+	// is actually seen rather than swallowed by the client's create-time sync). The
+	// gun-mounted and plain suit flashlight restore fine and are left alone.
+	if ( FlashlightIsOn() )
+	{
+		CBaseModularWeapon *pModWeap = ToModularWeapon( GetActiveWeapon() );
+		if ( pModWeap && pModWeap->AllowsHeldFlashlight() && !pModWeap->HasAttachmentInSlot( ATTACHMENT_FLASHLIGHT ) )
+		{
+			RemoveEffects( EF_DIMLIGHT );
+			if ( Flashlight_UseLegacyVersion() )
+				SuitPower_RemoveDevice( SuitDeviceFlashlight );
+
+			SetContextThink( &CHL2_Player::RedoHeldFlashlightThink, gpGlobals->curtime + 0.5f, "RedoHeldFlashlight" );
+		}
+	}
 #endif // FP
 
 	m_pPlayerAISquad = g_AI_SquadManager.FindCreateSquad(AllocPooledString(PLAYER_SQUADNAME));

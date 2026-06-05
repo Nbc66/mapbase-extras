@@ -29,8 +29,11 @@ class CVGuiScreen;
 #define VIEWMODEL_INDEX_BITS 1
 
 // GESTURES: one active VManip-style gesture layer (client-only, cosmetic)
+#ifdef FP
+#define MAX_VM_GESTURES 4   // shared: the server indexes gesture-driver slots by this too
+#endif
+
 #if defined( CLIENT_DLL )
-#define MAX_VM_GESTURES 4
 struct vmgesture_t
 {
 	C_BaseAnimating *pSource;   // NULL = sequence is in the VM's own model (layer path).
@@ -247,6 +250,12 @@ public:
 	// is the client executor behind both the play recv proxy and PlayGestureByName.
 	int   PlayGestureDefIndex(unsigned short defIndex, int slot = -1);
 
+	// Look up a gesture def by name and play it locally; returns the slot (or -1).
+	// Client-direct "local cosmetic" path -- never networks. slot < 0 picks the first
+	// free slot; STORE the return if you need to stop/address it later (don't assume
+	// a fixed channel).
+	int   PlayGestureLocal(const char* pszGestureName, int slot = -1);
+
 	// Queue ONE follow-up sequence on a live slot's SAME source model. When the
 	// current one-shot finishes, the slot re-points to this sequence in place
 	// (no model respawn, no fade dip) instead of retiring. One-deep: a queued
@@ -254,6 +263,11 @@ public:
 	void  QueueGestureNext(int slot, const char* seqName, bool loop = false);
 
 	bool  IsGestureActive(int slot) const;
+
+	// Separate-model gesture's live source renderable for a slot (NULL for the layer
+	// path or an empty slot). Lets callers read its attachment points -- e.g. the
+	// held flashlight reads GetAttachment("light") off it to drive the beam.
+	C_BaseAnimating* GetGestureSourceModel(int slot) const;
 
 	// Recv-proxy hooks: a networked gesture trigger changed -> run the client call.
 	void  OnGesturePlayParityChanged(void);   // play m_iGesturePlayDef into m_iGesturePlaySlot
@@ -311,6 +325,8 @@ private:
 	int						m_nOldAnimationParity;
 #ifdef FP
 	vmgesture_t				m_Gestures[MAX_VM_GESTURES];
+	int						m_nOldGesturePlayParity;   // last-handled play trigger (see OnDataChanged)
+	int						m_nOldGestureStopParity;   // last-handled stop trigger
 #endif // FP
 #endif
 

@@ -36,6 +36,13 @@ public:
     // areas (or vice versa) because our bone-derived position is somewhere
     // weird relative to the parent's actual mesh.
     virtual bool OnInternalDrawModel(ClientModelRenderInfo_t* pInfo) OVERRIDE;
+
+#ifdef FP
+    // This renderable doubles as the separate-model gesture source. The engine
+    // already ticks its animation and fires its events here (Simulate ->
+    // DoAnimationEvents); route the gesture event to the owning weapon.
+    virtual void FireEvent(const Vector& origin, const QAngle& angles, int event, const char* options) OVERRIDE;
+#endif
 };
 
 #endif // CLIENT_DLL

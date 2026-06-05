@@ -309,6 +309,11 @@ public:
 	int					FlashlightIsOn( void );
 	void				FlashlightTurnOn( void );
 	void				FlashlightTurnOff( void );
+#ifdef FP
+	// Re-arms the handheld flashlight after a save restore (its gesture is client-only
+	// and isn't saved). Deferred a beat so the client has recreated the viewmodel.
+	void				RedoHeldFlashlightThink( void );
+#endif
 	bool				IsIlluminatedByFlashlight( CBaseEntity *pEntity, float *flReturnDot );
 	void				SetFlashlightPowerDrainScale( float flScale ) { m_flFlashlightPowerDrainScale = flScale; }
 

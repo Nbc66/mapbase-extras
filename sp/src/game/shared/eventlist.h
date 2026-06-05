@@ -98,6 +98,12 @@ typedef enum
 	AE_VSCRIPT_RUN_FILE,	// Run vscript file (server + client)
 #endif
 
+#ifdef FP
+	AE_VM_GESTURE_EVENT,	// Viewmodel gesture anim event (client). The options string
+							// is routed to the owning weapon's OnGestureEvent, e.g.
+							// "flashlight_on" / "flashlight_off".
+#endif
+
 	LAST_SHARED_ANIMEVENT,
 } Animevent;
 

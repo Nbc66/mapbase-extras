@@ -74,6 +74,34 @@ public:
     void  PlayGesture(const char* pszGestureName, int slot = 0);
     void  StopGesture(int slot);
     void  StopAllGestures(void);
+
+    // --- Flashlight: handheld gesture + beam origin ---
+    // The player's flashlight (EF_DIMLIGHT) stays the single on/off. The handheld
+    // gesture is a LOCAL cosmetic that reacts to that networked state client-side,
+    // so PlayGesture returns its slot and we store it (no hardcoded channel).
+    // Priority: gun-mounted ATTACHMENT_FLASHLIGHT first, then the handheld gesture,
+    // then the eye (plain suit flashlight).
+
+    // Per-weapon opt-in: with NO gun-mounted flashlight attachment, returning true
+    // makes switching the flashlight on pull out a HANDHELD flashlight (gesture).
+    // Off by default; override per weapon (e.g. a pistol that frees the support hand).
+    virtual bool        AllowsHeldFlashlight(void) const { return false; }
+    // Registry defs for the handheld flashlight: pullout->idle, and the put-away.
+    virtual const char* GetHeldFlashlightGesture(void) const { return "held_flashlight"; }
+    virtual const char* GetHeldFlashlightPulldownGesture(void) const { return "held_flashlight_pulldown"; }
+
+    // A gesture anim event routed here -- from the server gesture driver (AE_TYPE_SERVER)
+    // or the client gesture dispatch (AE_TYPE_CLIENT). 'options' is the action, e.g.
+    // "flashlight_on" / "flashlight_off". The server half flips the owner's EF_DIMLIGHT
+    // so the light (NPC perception AND the beam) turns on/off at the animation's click.
+    void                OnGestureEvent(const char* options);
+
+#ifdef CLIENT_DLL
+    // Beam origin for the player flashlight: the "light" attachment of the gun-mounted
+    // flashlight prop if equipped, else any active gesture source's. Both are
+    // C_AttachmentRenderables carrying a "light" attachment point.
+    bool                GetFlashlightLightTransform(Vector& origin, QAngle& angles);
+#endif
 #endif // FP
 
     virtual char const* GetShootSound(int iIndex) const;

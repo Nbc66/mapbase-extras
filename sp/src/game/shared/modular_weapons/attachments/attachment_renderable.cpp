@@ -5,6 +5,13 @@
 #include "attachment_renderable.h"
 #include "studio.h"
 
+#ifdef FP
+#include "baseviewmodel_shared.h"
+#include "modular_weapons/basemodularweapon.h"
+#endif
+
+#include "eventlist.h"
+
 #include "tier0/memdbgon.h"
 
 //-----------------------------------------------------------------------------
@@ -95,5 +102,29 @@ bool C_AttachmentRenderable::OnInternalDrawModel( ClientModelRenderInfo_t *pInfo
     pInfo->pLightingOrigin = &vecLightingOrigin;
     return true;
 }
+
+#ifdef FP
+//-----------------------------------------------------------------------------
+// Purpose: As a gesture source, route the gesture anim event to the owning weapon.
+//          We're parented to the viewmodel, which knows its weapon.
+//-----------------------------------------------------------------------------
+void C_AttachmentRenderable::FireEvent( const Vector& origin, const QAngle& angles, int event, const char* options )
+{
+    if ( event == AE_VM_GESTURE_EVENT )
+    {
+        C_BaseEntity* pParent = GetMoveParent();
+        if ( pParent && pParent->GetBaseAnimating() && pParent->GetBaseAnimating()->IsViewModel() )
+        {
+            C_BaseViewModel* pVM = assert_cast<C_BaseViewModel*>( pParent );
+            C_BaseModularWeapon* pWeapon = ToModularWeapon( pVM->GetOwningWeapon() );
+            if ( pWeapon )
+                pWeapon->OnGestureEvent( options );
+        }
+        return;
+    }
+
+    BaseClass::FireEvent( origin, angles, event, options );
+}
+#endif // FP
 
 #endif // CLIENT_DLL

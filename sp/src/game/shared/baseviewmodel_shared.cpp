@@ -57,6 +57,8 @@ CBaseViewModel::CBaseViewModel()
 	m_EntClientFlags |= ENTCLIENTFLAG_ALWAYS_INTERPOLATE;
 #ifdef FP
 	V_memset(m_Gestures, 0, sizeof(m_Gestures));   // GESTURES
+	m_nOldGesturePlayParity = 0;
+	m_nOldGestureStopParity = 0;
 #endif // FP
 #endif
 	SetRenderColor( 255, 255, 255, 255 );
@@ -102,7 +104,6 @@ void CBaseViewModel::UpdateOnRemove( void )
 //-----------------------------------------------------------------------------
 void CBaseViewModel::Precache( void )
 {
-	PrecacheModel("models/weapons/c_flashlight_arm.mdl");
 }
 
 //-----------------------------------------------------------------------------
@@ -665,34 +666,11 @@ static void RecvProxy_Weapon( const CRecvProxyData *pData, void *pStruct, void *
 }
 #endif
 
-#if defined( CLIENT_DLL ) && defined( FP )
-// GESTURES: the play/stop triggers each fire on a PARITY change, not a value change,
-// so re-sending the same def/slot still re-plays it. The payload (def/slot) is sent
-// before its parity in the table, so it's already current when these run.
-static void RecvProxy_GesturePlayParity( const CRecvProxyData *pData, void *pStruct, void *pOut )
-{
-	CBaseViewModel *pVM = (CBaseViewModel *)pStruct;
-	int *pParity   = (int *)pOut;
-	int  newParity = pData->m_Value.m_Int;
-	if ( *pParity != newParity )
-	{
-		*pParity = newParity;
-		pVM->OnGesturePlayParityChanged();
-	}
-}
-
-static void RecvProxy_GestureStopParity( const CRecvProxyData *pData, void *pStruct, void *pOut )
-{
-	CBaseViewModel *pVM = (CBaseViewModel *)pStruct;
-	int *pParity   = (int *)pOut;
-	int  newParity = pData->m_Value.m_Int;
-	if ( *pParity != newParity )
-	{
-		*pParity = newParity;
-		pVM->OnGestureStopParityChanged();
-	}
-}
-#endif // CLIENT_DLL && FP
+// GESTURES: the play/stop triggers fire on a PARITY change (re-sending the same
+// def/slot still re-plays). We do NOT act on them in a recv proxy -- proxies run
+// during the net-update phase with abs queries disabled, and playing a gesture there
+// spawns/parents the source entity, which asserts s_bAbsQueriesValid. Instead we latch
+// the parity and compare it in OnDataChanged (runs after abs is re-enabled).
 
 
 LINK_ENTITY_TO_CLASS( viewmodel, CBaseViewModel );
@@ -742,12 +720,13 @@ BEGIN_NETWORK_TABLE_NOBASE(CBaseViewModel, DT_BaseViewModel)
 	RecvPropEHandle (RECVINFO(m_hOwner)),
 
 #ifdef FP
-	// GESTURES: must mirror the send order above (payload before its parity proxy).
+	// GESTURES: just latched here; OnDataChanged detects the parity change and plays
+	// (deferred out of the net-update phase where abs queries are disabled).
 	RecvPropInt( RECVINFO( m_iGesturePlayDef ) ),
 	RecvPropInt( RECVINFO( m_iGesturePlaySlot ) ),
-	RecvPropInt( RECVINFO( m_nGesturePlayParity ), 0, RecvProxy_GesturePlayParity ),
+	RecvPropInt( RECVINFO( m_nGesturePlayParity ) ),
 	RecvPropInt( RECVINFO( m_iGestureStopSlot ) ),
-	RecvPropInt( RECVINFO( m_nGestureStopParity ), 0, RecvProxy_GestureStopParity ),
+	RecvPropInt( RECVINFO( m_nGestureStopParity ) ),
 #endif // FP
 
 	RecvPropInt( RECVINFO( m_nNewSequenceParity )),
@@ -997,6 +976,13 @@ bool CBaseViewModel::IsGestureActive(int slot) const
 	return (slot >= 0 && slot < MAX_VM_GESTURES) ? m_Gestures[slot].active : false;
 }
 
+C_BaseAnimating* CBaseViewModel::GetGestureSourceModel(int slot) const
+{
+	if (slot < 0 || slot >= MAX_VM_GESTURES || !m_Gestures[slot].active)
+		return NULL;
+	return m_Gestures[slot].pSource;   // NULL for the layer path (no separate model)
+}
+
 // Resolve a registry def to a concrete play (layer vs separate-model path) using
 // the def's own envelope params, into 'slot' (-1 = first free). Then auto-queue the
 // def's szNext follow-up, reading the follow-up's loop-ness off ITS OWN bLoop.
@@ -1010,13 +996,40 @@ int CBaseViewModel::PlayGestureDefIndex(unsigned short defIndex, int slot)
 		return -1;
 	}
 
-	int played = pDef->UsesModel()
-		? PlayGestureFromModel(pDef->szModel, pDef->szSequence,
-			pDef->speed, pDef->peak, pDef->speedIn, pDef->speedOut,
-			pDef->curve, pDef->startCycle, pDef->bLoop, 0.0f /*fadeOut*/, slot)
-		: PlayGesture(pDef->szSequence,
-			pDef->speed, pDef->peak, pDef->speedIn, pDef->speedOut,
-			pDef->curve, pDef->startCycle, pDef->bLoop, 0.0f /*fadeOut*/, slot);
+	int played = -1;
+
+	// REUSE the model if the target slot is already playing this def's model: swap the
+	// sequence in place (RepointGesture -- same pSource, weight clock preserved) instead
+	// of retiring + respawning. Keeps the held pose continuous (no model pop, no weight
+	// dip) on same-model switches, e.g. idle -> pulldown, or an on->off->on re-trigger.
+	if (pDef->UsesModel() && slot >= 0 && slot < MAX_VM_GESTURES
+		&& m_Gestures[slot].active && m_Gestures[slot].pSource)
+	{
+		// Match by model INDEX, not name: the source is a client-created entity, so its
+		// GetModelName() string_t is empty even though the model is loaded -- but its
+		// model index is set. modelinfo gives the def model's (precached) index.
+		int slotModelIdx = m_Gestures[slot].pSource->GetModelIndex();
+		if (slotModelIdx > 0 && slotModelIdx == modelinfo->GetModelIndex(pDef->szModel))
+		{
+			vmgesture_t& g = m_Gestures[slot];
+			g.speed = pDef->speed;     g.peakOffset = pDef->peak;
+			g.speedIn = pDef->speedIn; g.speedOut = pDef->speedOut; g.curve = pDef->curve;
+			g.fadeOutDur = pDef->fadeOut;   // end fade-out carries to the swapped sequence
+			if (RepointGesture(slot, pDef->szSequence, pDef->bLoop, gpGlobals->curtime))
+				played = slot;
+		}
+	}
+
+	if (played < 0)
+	{
+		played = pDef->UsesModel()
+			? PlayGestureFromModel(pDef->szModel, pDef->szSequence,
+				pDef->speed, pDef->peak, pDef->speedIn, pDef->speedOut,
+				pDef->curve, pDef->startCycle, pDef->bLoop, pDef->fadeOut, slot)
+			: PlayGesture(pDef->szSequence,
+				pDef->speed, pDef->peak, pDef->speedIn, pDef->speedOut,
+				pDef->curve, pDef->startCycle, pDef->bLoop, pDef->fadeOut, slot);
+	}
 
 	if (played < 0)
 		return -1;
@@ -1034,6 +1047,18 @@ int CBaseViewModel::PlayGestureDefIndex(unsigned short defIndex, int slot)
 	}
 
 	return played;
+}
+
+int CBaseViewModel::PlayGestureLocal(const char* pszGestureName, int slot)
+{
+	CGestureRegistry::Instance().EnsureLoaded();
+	unsigned short idx = CGestureRegistry::Instance().FindIndexByName(pszGestureName);
+	if (idx == INVALID_GESTURE_DEF_INDEX)
+	{
+		DevWarning("PlayGestureLocal: no gesture def '%s'\n", pszGestureName ? pszGestureName : "(null)");
+		return -1;
+	}
+	return PlayGestureDefIndex(idx, slot);
 }
 
 // Recv-proxy hooks (client side of the server triggers).
