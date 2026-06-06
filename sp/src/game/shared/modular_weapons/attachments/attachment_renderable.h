@@ -42,6 +42,13 @@ public:
     // already ticks its animation and fires its events here (Simulate ->
     // DoAnimationEvents); route the gesture event to the owning weapon.
     virtual void FireEvent(const Vector& origin, const QAngle& angles, int event, const char* options) OVERRIDE;
+
+    // Self-remove on the next client think. The viewmodel gesture system schedules this
+    // (CBaseViewModel::RetireGesture) to delete us a tick later, in the sim-phase think
+    // pass -- NOT synchronously, because RetireGesture runs from StandardBlendingRules
+    // inside the view-model render-list walk, where an immediate Remove() would dangle a
+    // list entry and crash DrawRenderablesInList. Nothing else schedules our client think.
+    virtual void ClientThink() OVERRIDE;
 #endif
 };
 

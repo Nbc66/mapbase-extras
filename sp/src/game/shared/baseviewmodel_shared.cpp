@@ -1034,6 +1034,15 @@ int CBaseViewModel::PlayGestureDefIndex(unsigned short defIndex, int slot)
 	if (played < 0)
 		return -1;
 
+	// A PLAY replaces the slot's follow-up queue with THIS def's own. The model-reuse
+	// (interrupt) path swaps the sequence via RepointGesture, which leaves any previously
+	// queued next intact -- so without this, interrupting a pullout (next = idle) with the
+	// pulldown (no next) before the idle has started would still advance to the idle when
+	// the pulldown ends (the arm pops back up). Clear here; the block below re-queues only
+	// if this def carries its own next.
+	m_Gestures[played].nextSeq[0] = '\0';
+	m_Gestures[played].nextLoop  = false;
+
 	// Auto-queue the follow-up def (held item: pullout -> idle). The follow-up's
 	// loop flag is just that def's bLoop -- no separate field. Same-model swap.
 	if (pDef->szNext[0])
@@ -1109,7 +1118,18 @@ void CBaseViewModel::RetireGesture(int slot)
 	g.fadeOutStart = -1.0f;
 	if (g.pSource)
 	{
-		g.pSource->Remove();
+		// Defer the free; do NOT delete synchronously. RetireGesture runs from
+		// StandardBlendingRules, i.e. the VM's SetupBones WHILE the engine is walking the
+		// view-model render list (DrawViewModels -> DrawRenderablesInList) -- and the source
+		// is another entry in that very list. The client Remove() deletes immediately, so
+		// freeing here dangles a later list entry and the walk crashes on
+		// list[i]->GetIClientUnknown(). Hide it now and let it delete ITSELF on its next
+		// client think: the think pass runs in the sim phase, after the render walk. (The
+		// client delete list rejects entities -- GetClientNetworkable() is always non-NULL --
+		// and client context thinks don't dispatch, so the source's own ClientThink is the
+		// one hook that actually fires; see C_AttachmentRenderable::ClientThink.)
+		g.pSource->AddEffects( EF_NODRAW );
+		g.pSource->SetNextClientThink( gpGlobals->curtime );
 		g.pSource = NULL;
 	}
 }
