@@ -660,6 +660,11 @@ CHL2_Player::CHL2_Player()
 	m_flArmorReductionTime = 0.0f;
 	m_iArmorReductionFrom = 0;
 
+#ifdef FP
+	m_bHeldFlashlightWantOn = false;
+	m_flHeldFlashlightLockUntil = 0.0f;
+#endif
+
 #ifdef MAPBASE
 	m_nProtagonistIndex = -1;
 #endif
@@ -2635,6 +2640,14 @@ int CHL2_Player::FlashlightIsOn( void )
 	return IsEffectActive( EF_DIMLIGHT );
 }
 
+#ifdef FP
+// Safety cap for the held-flashlight toggle gate: the gate normally releases the moment
+// EF_DIMLIGHT settles to the intended state (the gesture's anim event), so this only acts
+// as a fallback if that event never arrives (e.g. the transition was interrupted). Keep it
+// longer than any pullout/pulldown so it never cuts a real transition short.
+#define HELD_FLASHLIGHT_TOGGLE_LOCK 2.0f
+#endif
+
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
@@ -2662,6 +2675,16 @@ void CHL2_Player::FlashlightTurnOn( void )
 	CBaseModularWeapon *pModWeap = ToModularWeapon( GetActiveWeapon() );
 	if ( pModWeap && pModWeap->AllowsHeldFlashlight() && !pModWeap->HasAttachmentInSlot( ATTACHMENT_FLASHLIGHT ) )
 	{
+		// GATE: ignore the toggle while a pullout/pulldown is still in flight. EF_DIMLIGHT
+		// is set by the gesture's anim event, so it lags the keypress; until it settles to
+		// our last intent (or the safety cap expires) another press would just restart the
+		// pullout and it'd never reach its flashlight_on frame.
+		if ( IsEffectActive( EF_DIMLIGHT ) != m_bHeldFlashlightWantOn
+			&& gpGlobals->curtime < m_flHeldFlashlightLockUntil )
+			return;
+
+		m_bHeldFlashlightWantOn     = true;
+		m_flHeldFlashlightLockUntil = gpGlobals->curtime + HELD_FLASHLIGHT_TOGGLE_LOCK;
 		pModWeap->PlayGesture( pModWeap->GetHeldFlashlightGesture(), 0 );
 		return;
 	}
@@ -2693,6 +2716,14 @@ void CHL2_Player::FlashlightTurnOff( void )
 	CBaseModularWeapon *pModWeap = ToModularWeapon( GetActiveWeapon() );
 	if ( pModWeap && pModWeap->AllowsHeldFlashlight() && !pModWeap->HasAttachmentInSlot( ATTACHMENT_FLASHLIGHT ) )
 	{
+		// GATE: mirror of FlashlightTurnOn -- ignore the toggle while the pulldown (or a
+		// not-yet-settled pullout) is still in flight, so spamming the key can't restart it.
+		if ( IsEffectActive( EF_DIMLIGHT ) != m_bHeldFlashlightWantOn
+			&& gpGlobals->curtime < m_flHeldFlashlightLockUntil )
+			return;
+
+		m_bHeldFlashlightWantOn     = false;
+		m_flHeldFlashlightLockUntil = gpGlobals->curtime + HELD_FLASHLIGHT_TOGGLE_LOCK;
 		pModWeap->PlayGesture( pModWeap->GetHeldFlashlightPulldownGesture(), 0 );
 		return;
 	}
