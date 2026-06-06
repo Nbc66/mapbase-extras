@@ -68,38 +68,25 @@ public:
     virtual bool  IsBaseModularWeapon(void) const { return true; }
 
 #ifdef FP
-    // Viewmodel gesture passthrough. Forwards to the owner's viewmodel front door,
-    // which nets server->client (or runs locally if called on the client). 'slot'
-    // is the viewmodel gesture channel you play into, so you can stop/replace it.
+    // Viewmodel gesture passthrough to the owner's viewmodel front door. 'slot' is the
+    // channel you play into, so you can stop/replace it.
     void  PlayGesture(const char* pszGestureName, int slot = 0);
     void  StopGesture(int slot);
     void  StopAllGestures(void);
 
-    // --- Flashlight: handheld gesture + beam origin ---
-    // The player's flashlight (EF_DIMLIGHT) stays the single on/off. The handheld
-    // gesture is a LOCAL cosmetic that reacts to that networked state client-side,
-    // so PlayGesture returns its slot and we store it (no hardcoded channel).
-    // Priority: gun-mounted ATTACHMENT_FLASHLIGHT first, then the handheld gesture,
-    // then the eye (plain suit flashlight).
-
-    // Per-weapon opt-in: with NO gun-mounted flashlight attachment, returning true
-    // makes switching the flashlight on pull out a HANDHELD flashlight (gesture).
-    // Off by default; override per weapon (e.g. a pistol that frees the support hand).
+    // Handheld flashlight. Opt-in per weapon (with no gun-mounted ATTACHMENT_FLASHLIGHT):
+    // returning true makes the flashlight toggle pull out a handheld flashlight gesture.
     virtual bool        AllowsHeldFlashlight(void) const { return false; }
-    // Registry defs for the handheld flashlight: pullout->idle, and the put-away.
     virtual const char* GetHeldFlashlightGesture(void) const { return "held_flashlight"; }
     virtual const char* GetHeldFlashlightPulldownGesture(void) const { return "held_flashlight_pulldown"; }
 
-    // A gesture anim event routed here -- from the server gesture driver (AE_TYPE_SERVER)
-    // or the client gesture dispatch (AE_TYPE_CLIENT). 'options' is the action, e.g.
-    // "flashlight_on" / "flashlight_off". The server half flips the owner's EF_DIMLIGHT
-    // so the light (NPC perception AND the beam) turns on/off at the animation's click.
+    // A gesture anim event ('options' is the action, e.g. "flashlight_on"). The server half
+    // flips the owner's EF_DIMLIGHT so the light turns on/off at the animation's click frame.
     void                OnGestureEvent(const char* options);
 
 #ifdef CLIENT_DLL
     // Beam origin for the player flashlight: the "light" attachment of the gun-mounted
-    // flashlight prop if equipped, else any active gesture source's. Both are
-    // C_AttachmentRenderables carrying a "light" attachment point.
+    // flashlight prop if equipped, else any active gesture source's.
     bool                GetFlashlightLightTransform(Vector& origin, QAngle& angles);
 #endif
 #endif // FP

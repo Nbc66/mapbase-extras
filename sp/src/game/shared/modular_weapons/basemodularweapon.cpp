@@ -161,10 +161,7 @@ void CBaseModularWeapon::Precache(void)
 }
 
 #ifdef FP
-// ---------------------------------------------------------------------------
-// Gesture passthrough. Resolve the owner's viewmodel and forward to its gesture
-// front door (which handles the server-net / client-run split internally).
-// ---------------------------------------------------------------------------
+// Gesture passthrough: forward to the owner's viewmodel front door.
 void CBaseModularWeapon::PlayGesture(const char* pszGestureName, int slot)
 {
     CBasePlayer* pPlayer = ToBasePlayer(GetOwner());
@@ -195,30 +192,18 @@ void CBaseModularWeapon::StopAllGestures(void)
         pVM->StopAllGestures();
 }
 
-// ---------------------------------------------------------------------------
-// Flashlight: the gesture is server-triggered (the player's FlashlightTurnOn/Off
-// fires PlayGesture), so its server anim event lands here and flips EF_DIMLIGHT at
-// the click frame. That single networked flag then drives BOTH NPC perception and
-// the client beam -- so the client only needs to know where the beam starts.
-// ---------------------------------------------------------------------------
+// A gesture anim event. The gesture is client-only, so the client forwards the event to
+// the server, where it can drive gameplay (the handheld flashlight defers EF_DIMLIGHT to
+// here, so the beam clicks on at the animation frame instead of the keypress).
 void CBaseModularWeapon::OnGestureEvent(const char* options)
 {
     if (!options || !*options)
         return;
 
 #ifdef CLIENT_DLL
-    // The gesture -- and therefore this event -- is entirely client-side (the source
-    // model is a client-only renderable). To let the SAME authored event run server
-    // gameplay, forward it; the vm_gesture_event command handler below re-enters this
-    // function server-side. Cheap on a listen server (singleplayer).
     if ( engine )
         engine->ServerCmd( VarArgs( "vm_gesture_event \"%s\"\n", options ) );
-
-    // (client-side reactions -- e.g. flashlight beam lit-state -- can also go here)
 #else
-    // Server: the handheld flashlight DEFERS its actual light to here, so it turns on
-    // at the animation's click frame instead of the keypress. EF_DIMLIGHT drives both
-    // NPC perception and the beam, so flipping it here aligns gameplay and visuals.
     CBaseEntity *pOwner = GetOwner();
     if ( !pOwner )
         return;
@@ -231,9 +216,7 @@ void CBaseModularWeapon::OnGestureEvent(const char* options)
 }
 
 #ifdef GAME_DLL
-// Receives a gesture anim event forwarded from the client (the gesture only fires
-// client-side) and runs it through the server-side OnGestureEvent for the issuing
-// player's active weapon.
+// Runs a client-forwarded gesture anim event through the issuing player's active weapon.
 CON_COMMAND( vm_gesture_event, "Internal: client-forwarded viewmodel gesture anim event." )
 {
     CBasePlayer* pPlayer = ToBasePlayer( UTIL_GetCommandClient() );
@@ -258,8 +241,7 @@ bool CBaseModularWeapon::GetFlashlightLightTransform(Vector& origin, QAngle& ang
             return true;
     }
 
-    // 2) Any active gesture source carrying a "light" attachment (the handheld
-    //    flashlight). The server picked the slot; we just find it by its attachment.
+    // 2) Any active gesture source carrying a "light" attachment (the handheld flashlight).
     C_BasePlayer* pOwner = ToBasePlayer(GetOwner());
     C_BaseViewModel* pVM = pOwner ? pOwner->GetViewModel() : NULL;
     if (pVM)

@@ -38,16 +38,11 @@ public:
     virtual bool OnInternalDrawModel(ClientModelRenderInfo_t* pInfo) OVERRIDE;
 
 #ifdef FP
-    // This renderable doubles as the separate-model gesture source. The engine
-    // already ticks its animation and fires its events here (Simulate ->
-    // DoAnimationEvents); route the gesture event to the owning weapon.
+    // As a gesture source: route the gesture anim event to the owning weapon.
     virtual void FireEvent(const Vector& origin, const QAngle& angles, int event, const char* options) OVERRIDE;
 
-    // Self-remove on the next client think. The viewmodel gesture system schedules this
-    // (CBaseViewModel::RetireGesture) to delete us a tick later, in the sim-phase think
-    // pass -- NOT synchronously, because RetireGesture runs from StandardBlendingRules
-    // inside the view-model render-list walk, where an immediate Remove() would dangle a
-    // list entry and crash DrawRenderablesInList. Nothing else schedules our client think.
+    // Deferred self-removal: CBaseViewModel::RetireGesture schedules this so it doesn't
+    // delete us mid view-model-render-walk (which would crash). See the .cpp.
     virtual void ClientThink() OVERRIDE;
 #endif
 };

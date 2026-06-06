@@ -99,9 +99,7 @@ typedef enum
 #endif
 
 #ifdef FP
-	AE_VM_GESTURE_EVENT,	// Viewmodel gesture anim event (client). The options string
-							// is routed to the owning weapon's OnGestureEvent, e.g.
-							// "flashlight_on" / "flashlight_off".
+	AE_VM_GESTURE_EVENT,	// Viewmodel gesture anim event; options routed to the weapon's OnGestureEvent
 #endif
 
 	LAST_SHARED_ANIMEVENT,

@@ -74,10 +74,8 @@ void CGestureRegistry::PrecacheAll()
 }
 
 //-----------------------------------------------------------------------------
-// Manifest-driven load. The manifest lists gesture def files in an explicit
-// order; we load them in that order so index assignment is DETERMINISTIC and
-// identical on both DLLs (index == wire identity). Append-only: do not reorder
-// the manifest or entries within a file, or you shift every later index.
+// Load files in manifest order so index assignment is deterministic and identical
+// on both DLLs (index == wire identity). Append-only: reordering shifts every later index.
 //-----------------------------------------------------------------------------
 void CGestureRegistry::LoadAll()
 {

@@ -843,8 +843,7 @@ int CBaseViewModel::PlayGesture(const char* seqName, float speed, float peak,
 		return -1;
 	}
 
-	// forceSlot pins the caller's channel: retire whatever is there and use exactly
-	// that slot (so a server-chosen slot maps 1:1). forceSlot < 0 = first free slot.
+	// forceSlot >= 0 pins that exact channel (retiring what's there); < 0 = first free slot.
 	const bool bForced = (forceSlot >= 0 && forceSlot < MAX_VM_GESTURES);
 	if (bForced)
 		RetireGesture(forceSlot);
@@ -901,8 +900,7 @@ int CBaseViewModel::PlayGestureFromModel(const char* modelName, const char* seqN
 		return -1;
 	}
 
-	// forceSlot pins the caller's channel (retire what's there, use exactly that slot
-	// -- removes the old source model). forceSlot < 0 = first free slot.
+	// forceSlot >= 0 pins that exact channel (retiring what's there); < 0 = first free slot.
 	const bool bForced = (forceSlot >= 0 && forceSlot < MAX_VM_GESTURES);
 	if (bForced)
 		RetireGesture(forceSlot);
@@ -945,9 +943,7 @@ void CBaseViewModel::ApplyGestureFromModel(C_BaseAnimating* pSource, int seq, fl
 	srcSetup.InitPose(srcPos, srcQ);
 	srcSetup.AccumulatePose(srcPos, srcQ, seq, cycle, 1.0f, currentTime, NULL);
 
-	// Per-bone weightlist for THIS sequence (the accessor you found on mstudioseqdesc_t).
-	// If the sequence has no weightlist, weightlistindex is 0 and weight(i) would read
-	// garbage off the seqdesc base -- so gate on it and fall back to "drive all".
+	// Per-bone weightlist for this sequence; weightlistindex 0 = none -> drive all bones.
 	mstudioseqdesc_t& seqdesc = srcHdr->pSeqdesc(seq);
 	const bool bHasWeightlist = (seqdesc.weightlistindex != 0);
 
@@ -955,14 +951,13 @@ void CBaseViewModel::ApplyGestureFromModel(C_BaseAnimating* pSource, int seq, fl
 	{
 		int vb = LookupBone(srcHdr->pBone(sb)->pszName());
 		if (vb < 0)
-			continue;   // bone not on the viewmodel -> nothing to drive
+			continue;   // bone not on the viewmodel
 
-		// Weightlist value for this bone (1.0 when no weightlist present).
 		float wl = bHasWeightlist ? seqdesc.weight(sb) : 1.0f;
 		if (wl <= 0.0f)
-			continue;   // weight 0 -> SKIP, so the viewmodel keeps its own pose (true mask)
+			continue;   // weight 0 -> keep the VM's own pose for this bone
 
-		float boneW = weight * wl;          // envelope * weightlist (feathering for free)
+		float boneW = weight * wl;
 		if (boneW <= 0.0f)
 			continue;
 
@@ -983,10 +978,8 @@ C_BaseAnimating* CBaseViewModel::GetGestureSourceModel(int slot) const
 	return m_Gestures[slot].pSource;   // NULL for the layer path (no separate model)
 }
 
-// Resolve a registry def to a concrete play (layer vs separate-model path) using
-// the def's own envelope params, into 'slot' (-1 = first free). Then auto-queue the
-// def's szNext follow-up, reading the follow-up's loop-ness off ITS OWN bLoop.
-// Client executor behind both the play recv proxy and PlayGestureByName.
+// Play a registry def into 'slot' (-1 = first free) and auto-queue its szNext follow-up.
+// Client executor behind both the networked play trigger and PlayGestureByName.
 int CBaseViewModel::PlayGestureDefIndex(unsigned short defIndex, int slot)
 {
 	const GestureDef_t* pDef = CGestureRegistry::Instance().FindByIndex(defIndex);
@@ -998,23 +991,19 @@ int CBaseViewModel::PlayGestureDefIndex(unsigned short defIndex, int slot)
 
 	int played = -1;
 
-	// REUSE the model if the target slot is already playing this def's model: swap the
-	// sequence in place (RepointGesture -- same pSource, weight clock preserved) instead
-	// of retiring + respawning. Keeps the held pose continuous (no model pop, no weight
-	// dip) on same-model switches, e.g. idle -> pulldown, or an on->off->on re-trigger.
+	// If the slot already runs this def's model, swap the sequence in place (RepointGesture)
+	// instead of respawning -- keeps the held pose continuous (idle->pulldown, on->off->on).
 	if (pDef->UsesModel() && slot >= 0 && slot < MAX_VM_GESTURES
 		&& m_Gestures[slot].active && m_Gestures[slot].pSource)
 	{
-		// Match by model INDEX, not name: the source is a client-created entity, so its
-		// GetModelName() string_t is empty even though the model is loaded -- but its
-		// model index is set. modelinfo gives the def model's (precached) index.
+		// Match by model INDEX: a client-created source has an empty GetModelName().
 		int slotModelIdx = m_Gestures[slot].pSource->GetModelIndex();
 		if (slotModelIdx > 0 && slotModelIdx == modelinfo->GetModelIndex(pDef->szModel))
 		{
 			vmgesture_t& g = m_Gestures[slot];
 			g.speed = pDef->speed;     g.peakOffset = pDef->peak;
 			g.speedIn = pDef->speedIn; g.speedOut = pDef->speedOut; g.curve = pDef->curve;
-			g.fadeOutDur = pDef->fadeOut;   // end fade-out carries to the swapped sequence
+			g.fadeOutDur = pDef->fadeOut;
 			if (RepointGesture(slot, pDef->szSequence, pDef->bLoop, gpGlobals->curtime))
 				played = slot;
 		}
@@ -1034,17 +1023,13 @@ int CBaseViewModel::PlayGestureDefIndex(unsigned short defIndex, int slot)
 	if (played < 0)
 		return -1;
 
-	// A PLAY replaces the slot's follow-up queue with THIS def's own. The model-reuse
-	// (interrupt) path swaps the sequence via RepointGesture, which leaves any previously
-	// queued next intact -- so without this, interrupting a pullout (next = idle) with the
-	// pulldown (no next) before the idle has started would still advance to the idle when
-	// the pulldown ends (the arm pops back up). Clear here; the block below re-queues only
-	// if this def carries its own next.
+	// A play replaces the slot's follow-up with this def's own: clear any inherited queue
+	// (the reuse path keeps it), then re-queue below only if this def has a next. Otherwise
+	// an interrupting pulldown would still advance to the previously-queued idle.
 	m_Gestures[played].nextSeq[0] = '\0';
 	m_Gestures[played].nextLoop  = false;
 
-	// Auto-queue the follow-up def (held item: pullout -> idle). The follow-up's
-	// loop flag is just that def's bLoop -- no separate field. Same-model swap.
+	// Auto-queue the follow-up def (pullout -> idle); its loop flag is the next def's bLoop.
 	if (pDef->szNext[0])
 	{
 		const GestureDef_t* pNext = CGestureRegistry::Instance().FindByName(pDef->szNext);
@@ -1070,7 +1055,7 @@ int CBaseViewModel::PlayGestureLocal(const char* pszGestureName, int slot)
 	return PlayGestureDefIndex(idx, slot);
 }
 
-// Recv-proxy hooks (client side of the server triggers).
+// Client side of the server play/stop triggers (called from OnDataChanged).
 void CBaseViewModel::OnGesturePlayParityChanged(void)
 {
 	PlayGestureDefIndex((unsigned short)m_iGesturePlayDef, m_iGesturePlaySlot);
@@ -1078,7 +1063,6 @@ void CBaseViewModel::OnGesturePlayParityChanged(void)
 
 void CBaseViewModel::OnGestureStopParityChanged(void)
 {
-	// StopGesture/StopAllGestures run directly here (client side of the split).
 	if (m_iGestureStopSlot < 0)
 		StopAllGestures();
 	else
@@ -1087,12 +1071,10 @@ void CBaseViewModel::OnGestureStopParityChanged(void)
 
 float CBaseViewModel::ComputeGestureWeight(const vmgesture_t& g, float now)
 {
-	// Ramp in over the first fraction of a second, then HOLD at full weight.
-	// No automatic fade-out: one-shots end via cycle>=1, holds end via StopGesture.
-	// (peakOffset / speedOut are unused here; keep them for an explicit fade-out later.)
+	// Ramp in over the first fraction of a second, then hold at full weight.
 	float t = (now - g.startTime) * 7.0f * g.speedIn;
-	float m = clamp(1.0f - t, 0.0f, 1.0f);   // m: 1 -> 0 as time advances
-	return 1.0f - powf(m, g.curve);          // weight: 0 -> 1, then holds at 1
+	float m = clamp(1.0f - t, 0.0f, 1.0f);
+	return 1.0f - powf(m, g.curve);
 }
 
 float CBaseViewModel::ComputeGestureCycle(const vmgesture_t& g, float now)
@@ -1118,63 +1100,46 @@ void CBaseViewModel::RetireGesture(int slot)
 	g.fadeOutStart = -1.0f;
 	if (g.pSource)
 	{
-		// Defer the free; do NOT delete synchronously. RetireGesture runs from
-		// StandardBlendingRules, i.e. the VM's SetupBones WHILE the engine is walking the
-		// view-model render list (DrawViewModels -> DrawRenderablesInList) -- and the source
-		// is another entry in that very list. The client Remove() deletes immediately, so
-		// freeing here dangles a later list entry and the walk crashes on
-		// list[i]->GetIClientUnknown(). Hide it now and let it delete ITSELF on its next
-		// client think: the think pass runs in the sim phase, after the render walk. (The
-		// client delete list rejects entities -- GetClientNetworkable() is always non-NULL --
-		// and client context thinks don't dispatch, so the source's own ClientThink is the
-		// one hook that actually fires; see C_AttachmentRenderable::ClientThink.)
+		// Don't delete synchronously: RetireGesture can run from StandardBlendingRules while
+		// the engine walks the view-model render list, and the source is in that list -- an
+		// immediate Remove() would dangle a list entry and crash. Hide it and let it remove
+		// itself on its next client think (sim phase, after the walk); see
+		// C_AttachmentRenderable::ClientThink.
 		g.pSource->AddEffects( EF_NODRAW );
 		g.pSource->SetNextClientThink( gpGlobals->curtime );
 		g.pSource = NULL;
 	}
 }
 
-// Queue one follow-up sequence on a live slot. Stored by NAME; resolved against
-// the slot's own model (pSource for the foreign path, the VM for the layer path)
-// at advance time. No-op if the slot isn't active.
+// Queue one follow-up sequence (by name) on a live slot. No-op if the slot isn't active.
 void CBaseViewModel::QueueGestureNext(int slot, const char* seqName, bool loop)
 {
 	if (slot < 0 || slot >= MAX_VM_GESTURES)
 		return;
 	vmgesture_t& g = m_Gestures[slot];
-	if (!g.active)
-		return;   // nothing to chain onto
-	if (!seqName || !*seqName)
+	if (!g.active || !seqName || !*seqName)
 		return;
 
-	// A loop never reaches cycle>=1, so it would never auto-consume a queue.
-	// Interrupt it NOW: repoint to the requested sequence immediately (same model,
-	// weight preserved). Held idles are short/near-static, so the interrupt frame is
-	// ~the held pose -- no need to play the idle cycle out. To return to a loop
-	// afterward, queue it again: the slot is now a one-shot and will defer normally.
+	// A loop never reaches cycle>=1 to consume a queue, so interrupt it now (repoint in
+	// place). One-shots defer: the queue is consumed when the animation finishes.
 	if (g.loop)
 	{
 		if (!RepointGesture(slot, seqName, loop, gpGlobals->curtime))
-			RetireGesture(slot);   // bad sequence name -> nothing to play, end the gesture
+			RetireGesture(slot);   // bad sequence name -> end the gesture
 		return;
 	}
 
-	// One-shot: defer. It advances when the current animation completes (cycle>=1).
 	V_strncpy(g.nextSeq, seqName, sizeof(g.nextSeq));
 	g.nextLoop = loop;
 }
 
-// In-place repoint of a live slot to a sequence on its SAME model. Reuses pSource
-// (ResetSequence, no Remove), restarts the cycle clock from 0, and preserves the
-// weight clock (startTime) so the held weight doesn't dip. Does NOT touch the queue.
-// This is the shared core behind both the queue-advance and the loop-interrupt.
+// In-place sequence swap on the slot's SAME model: restarts the cycle clock but preserves
+// the weight clock (no dip). Reuses pSource (ResetSequence, no Remove). Doesn't touch the queue.
 bool CBaseViewModel::RepointGesture(int slot, const char* seqName, bool loop, float now)
 {
 	vmgesture_t& g = m_Gestures[slot];
 
-	// Resolve on the SAME model that owns this slot's pose (foreign reuses pSource,
-	// layer uses the VM). This is a sequence swap, NOT a model swap.
-	C_BaseAnimating* src = g.pSource ? g.pSource : this;
+	C_BaseAnimating* src = g.pSource ? g.pSource : this;   // foreign reuses pSource, layer uses the VM
 	int seq = src->LookupSequence(seqName);
 	if (seq < 0)
 	{
@@ -1185,20 +1150,19 @@ bool CBaseViewModel::RepointGesture(int slot, const char* seqName, bool loop, fl
 	g.sequence = seq;
 	g.loop = loop;
 	g.startCycle = 0.0f;
-	g.cycleStartTime = now;     // restart cycle from 0; startTime (weight clock) untouched
-	g.fadeOutStart = -1.0f;     // fresh sequence: clear any partial end-fade (fadeOutDur carries)
+	g.cycleStartTime = now;     // restart cycle; startTime (weight clock) untouched
+	g.fadeOutStart = -1.0f;
 
 	if (g.pSource)
 	{
-		g.pSource->ResetSequence(seq);   // re-point the SAME source model; do NOT Remove
+		g.pSource->ResetSequence(seq);
 		g.pSource->SetCycle(0.0f);
 	}
 	return true;
 }
 
-// Consume the one-deep queue when a one-shot finishes (cycle>=1): repoint to
-// nextSeq, then clear the queue. Returns false if nothing valid is queued (the
-// caller then retires the slot).
+// Consume the one-deep queue when a one-shot finishes: repoint to nextSeq and clear it.
+// Returns false if nothing valid is queued (caller then retires the slot).
 bool CBaseViewModel::AdvanceGestureToNext(int slot, float now)
 {
 	vmgesture_t& g = m_Gestures[slot];
@@ -1206,7 +1170,7 @@ bool CBaseViewModel::AdvanceGestureToNext(int slot, float now)
 		return false;
 
 	bool ok = RepointGesture(slot, g.nextSeq, g.nextLoop, now);
-	g.nextSeq[0] = '\0';   // one-deep: queue consumed (even on a bad name -> caller retires)
+	g.nextSeq[0] = '\0';
 	g.nextLoop = false;
 	return ok;
 }
@@ -1252,41 +1216,31 @@ void CBaseViewModel::StandardBlendingRules(CStudioHdr* hdr, Vector pos[],
 		float weight = ComputeGestureWeight(g, currentTime);
 		float cycle = ComputeGestureCycle(g, currentTime);
 
-		// A non-looping gesture finishes when its ANIMATION completes, not when the
-		// weight envelope happens to reach zero. Only use the weight-faded-out retire
-		// for looping gestures (where there's no natural end) or gestures you explicitly
-		// fade out.
 		const bool pastPeak = (currentTime >= g.startTime + g.peakOffset);
 
 		if (g.loop)
 		{
-			// looping: only a deliberate fade-out ends it
+			// loop has no natural end -> only a deliberate fade-out retires it
 			if (pastPeak && weight <= 0.0f) { RetireGesture(i); continue; }
 		}
 		else if (cycle >= 1.0f)
 		{
-			// One-shot reached its last frame. Priority order:
-			//  1) queued follow-up -> re-point in place, keep going THIS frame (no gap);
-			//  2) end-fade-out     -> hold the last frame and ramp weight 1->0 so the
-			//                         arm lerps back to the LIVE weapon pose (the blend
-			//                         target BaseClass already wrote into pos[]/q[]);
-			//                         weapon-agnostic, needs no per-weapon return anim;
-			//  3) otherwise         -> snap-retire (legacy, when no fade authored).
+			// One-shot hit its last frame: 1) advance to a queued follow-up (no gap), else
+			// 2) fade weight 1->0 so the arm lerps back to the live weapon pose, else 3) retire.
 			if (AdvanceGestureToNext(i, currentTime))
 			{
-				cycle = ComputeGestureCycle(g, currentTime);    // ~0 for the new sequence
-				weight = ComputeGestureWeight(g, currentTime);  // unchanged: weight clock preserved
+				cycle = ComputeGestureCycle(g, currentTime);
+				weight = ComputeGestureWeight(g, currentTime);
 			}
 			else if (g.fadeOutDur > 0.0f)
 			{
 				if (g.fadeOutStart < 0.0f)
-					g.fadeOutStart = currentTime;        // stamp the moment the fade begins
+					g.fadeOutStart = currentTime;
 
 				const float fadeT = (currentTime - g.fadeOutStart) / g.fadeOutDur;
-				if (fadeT >= 1.0f) { RetireGesture(i); continue; }   // fully back on the gun
+				if (fadeT >= 1.0f) { RetireGesture(i); continue; }
 
-				// cycle is already clamped to 1.0 (one-shot) -> last frame held.
-				weight *= (1.0f - fadeT);                // ramp the held weight down to 0
+				weight *= (1.0f - fadeT);   // cycle is clamped to 1 -> last frame held
 			}
 			else
 			{
@@ -1294,7 +1248,7 @@ void CBaseViewModel::StandardBlendingRules(CStudioHdr* hdr, Vector pos[],
 				continue;
 			}
 		}
-		if (weight <= 0.0f) continue;   // skip a zero-weight frame, but DON'T retire
+		if (weight <= 0.0f) continue;   // skip a zero-weight frame without retiring
 
 		// ---- apply the gesture pose ----
 		if (g.pSource == NULL)
@@ -1408,12 +1362,9 @@ void CBaseViewModel::CalcIronsights(Vector& pos, QAngle& ang)
 }
 
 // ====================== GESTURES: server-callable front door ======================
-// Shared. The work happens on the client; the server can't touch the slot pipeline,
-// so it just nets a parity-tagged trigger and the client recv proxy runs the same
-// client call (PlayGestureDefIndex / RetireGesture). Calling these from client code
-// runs them directly. Cosmetic only -- do NOT call from unguarded predicted code on
-// both DLLs (it would net AND run locally); for predicted client play call
-// PlayGestureDefIndex directly under prediction->IsFirstTimePredicted().
+// Gestures run on the client. The server just nets a parity-tagged trigger (handled in
+// OnDataChanged); the client runs the call directly. Cosmetic only -- don't call from
+// unguarded predicted code (it would net AND run locally).
 void CBaseViewModel::PlayGestureByName(const char* pszGestureName, int slot)
 {
 	CGestureRegistry::Instance().EnsureLoaded();

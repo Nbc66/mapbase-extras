@@ -263,10 +263,7 @@ void EventList_RegisterSharedEvents( void )
 #endif
 
 #ifdef FP
-	// Fires on BOTH sides: the client gesture dispatch fires the AE_TYPE_CLIENT half
-	// (beam/sounds), the server gesture-driver fires the AE_TYPE_SERVER half (gameplay,
-	// e.g. flipping EF_DIMLIGHT at the flashlight click). Same event, both timed to
-	// the same animation.
+	// Client+server: the client fires it on the gesture, then forwards it to run server gameplay.
 	REGISTER_SHARED_ANIMEVENT( AE_VM_GESTURE_EVENT, AE_TYPE_CLIENT | AE_TYPE_SERVER );
 #endif
 }

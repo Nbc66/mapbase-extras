@@ -32,16 +32,12 @@ struct GestureDef_t
 		szNext[0] = '\0';
 	}
 
-	// FROZEN IDENTITY KEY. This is the KeyValues block name and the thing you
-	// call by (PlayGestureByName). It is also the wire identity via its index.
-	// NEVER rename a shipped gesture, and NEVER reorder the manifest/entries
-	// both shift the index and break any networked reference. Append-only.
+	// Frozen identity key: the KeyValues block name, the name you call by, and (via its
+	// index) the wire identity. Append-only -- never rename or reorder shipped gestures.
 	char  szName[64];
 
-	// Empty  -> weapon-baked gesture: sequence lives in the weapon's own model,
-	//           played via PlayGesture (AccumulatePose layer path).
-	// Set    -> separate-model gesture: played via PlayGestureFromModel from
-	//           this model (VManip-style pose-copy path).
+	// Empty -> weapon-baked gesture (sequence in the weapon's own model, layer path).
+	// Set   -> separate-model gesture (played from this model, pose-copy path).
 	char  szModel[MAX_PATH];
 
 	// Sequence name (in the weapon model, or in szModel).
@@ -49,20 +45,15 @@ struct GestureDef_t
 
 	bool  bLoop;
 
-	// Optional follow-up: the NAME of another gesture def to auto-queue after this
-	// one's sequence finishes (held item: this = pullout one-shot, szNext = idle
-	// loop). It's a def reference, not a bare sequence, so the follow-up's loop-ness
-	// is just that def's own bLoop -- nothing extra to store here. The queue is a
-	// same-model sequence swap, so szNext should name a def whose sequence lives in
-	// THIS def's model. Empty = no follow-up.
+	// Optional follow-up: NAME of another def to auto-queue when this sequence finishes
+	// (pullout -> idle). Same-model swap, so it must live in this def's model. Empty = none.
 	char  szNext[64];
 
-	// Envelope / cycle params (defaults match PlayGesture's defaults).
+	// Envelope / cycle params (defaults match PlayGesture's).
 	float speed, peak, speedIn, speedOut, curve, startCycle;
 
-	// End fade-out length (s). >0 = on the last frame of a one-shot, ramp weight 1->0
-	// over this long so the driven bones slerp back to the live weapon pose (smooth,
-	// weapon-agnostic return). 0 = snap on retire. Keep it short for the put-away.
+	// End fade-out (s): on a one-shot's last frame, ramp weight 1->0 so the bones slerp
+	// back to the live weapon pose. 0 = snap on retire.
 	float fadeOut;
 
 	bool UsesModel() const { return szModel[0] != '\0'; }

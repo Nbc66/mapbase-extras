@@ -448,12 +448,9 @@ private:
 
 	bool				m_bFlashlightDisabled;
 #ifdef FP
-	// Held-flashlight toggle gate. The light is deferred to the gesture's anim event, so
-	// EF_DIMLIGHT (and thus the on/off toggle) lags the keypress while a pullout/pulldown
-	// is mid-transition -- without a gate, spamming the key keeps restarting the pullout so
-	// it never reaches its flashlight_on frame. m_bHeldFlashlightWantOn is the state we're
-	// transitioning toward; the toggle is ignored until EF_DIMLIGHT matches it ("actually
-	// on/off") or m_flHeldFlashlightLockUntil expires (safety cap, so it can't stick).
+	// Held-flashlight toggle gate (the light lags the keypress because it's deferred to the
+	// gesture's anim event). m_bHeldFlashlightWantOn is the state we're transitioning toward;
+	// the toggle is ignored until EF_DIMLIGHT matches it or m_flHeldFlashlightLockUntil expires.
 	bool				m_bHeldFlashlightWantOn;
 	float				m_flHeldFlashlightLockUntil;
 #endif

@@ -454,10 +454,9 @@ void C_BaseViewModel::OnDataChanged( DataUpdateType_t updateType )
 	BaseClass::OnDataChanged(updateType);
 
 #ifdef FP
-	// GESTURES: act on the server's play/stop parity triggers HERE, not in their recv
-	// proxies -- proxies run during the net-update phase with abs queries disabled, and
-	// spawning a gesture source there asserts s_bAbsQueriesValid. This runs afterward,
-	// with abs valid. Sync on create so a stale parity doesn't replay on spawn.
+	// GESTURES: act on the server's play/stop parity triggers here, not in a recv proxy --
+	// proxies run with abs queries disabled, and spawning a gesture source there asserts.
+	// Sync on create so a stale parity doesn't replay on spawn.
 	if ( updateType == DATA_UPDATE_CREATED )
 	{
 		m_nOldGesturePlayParity = m_nGesturePlayParity;

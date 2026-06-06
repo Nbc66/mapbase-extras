@@ -126,15 +126,9 @@ void C_AttachmentRenderable::FireEvent( const Vector& origin, const QAngle& angl
     BaseClass::FireEvent( origin, angles, event, options );
 }
 
-//-----------------------------------------------------------------------------
-// Purpose: Deferred self-removal for the gesture-source role. CBaseViewModel::
-//          RetireGesture schedules this (SetNextClientThink) instead of deleting us
-//          on the spot: it retires us from StandardBlendingRules, which runs inside
-//          the view-model render-list walk (DrawRenderablesInList), so an immediate
-//          Remove() there frees a list entry mid-walk and crashes. The think pass runs
-//          in the sim phase, after the walk, so removing here is safe. Nothing else
-//          schedules our client think, so a think simply means "retire me".
-//-----------------------------------------------------------------------------
+// Deferred self-removal scheduled by CBaseViewModel::RetireGesture: it can't delete us
+// synchronously (it retires from inside the view-model render-list walk), so it hides us
+// and schedules this think, which runs in the safe sim phase. Nothing else thinks us.
 void C_AttachmentRenderable::ClientThink()
 {
     Remove();

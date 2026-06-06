@@ -28,9 +28,9 @@ class CVGuiScreen;
 
 #define VIEWMODEL_INDEX_BITS 1
 
-// GESTURES: one active VManip-style gesture layer (client-only, cosmetic)
+// GESTURES: VManip-style viewmodel gesture layers (client-only, cosmetic)
 #ifdef FP
-#define MAX_VM_GESTURES 4   // shared: the server indexes gesture-driver slots by this too
+#define MAX_VM_GESTURES 4   // shared: the server addresses gesture slots by this too
 #endif
 
 #if defined( CLIENT_DLL )
@@ -115,16 +115,10 @@ public:
 #ifdef FP
 	void		CalcIronsights(Vector& pos, QAngle& ang);
 
-	// >>> GESTURES: server-callable, mirrors the client functions. Gestures only
-	// execute on the client (slots + source models are client-only), so on the
-	// SERVER these just net a tiny parity-tagged trigger; the client recv proxy
-	// then runs the matching client call. On the CLIENT they run it directly. So
-	// the same function works whether you call it from server or client code.
-	//
-	// 'slot' is the channel you play into (server picks it, client honors it) so
-	// you can stop/replace that exact gesture later. Interrupt = play another def
-	// into the same slot. A held item's pullout->idle chain lives in the DEF
-	// (GestureDef_t::szNext), so PLAY of one def is enough -- no second call.
+	// GESTURES front door, callable from server or client. Gestures run on the client, so
+	// on the server these net a parity-tagged trigger; on the client they run directly.
+	// 'slot' is the channel (server picks, client honors) so you can stop/replace it later;
+	// a held item's pullout->idle chain lives in the def (szNext), so one play is enough.
 	void		PlayGestureByName(const char* pszGestureName, int slot = 0);
 	void		StopGesture(int slot);      // retire one slot
 	void		StopAllGestures(void);      // retire every slot
@@ -228,55 +222,45 @@ public:
 	virtual	bool			GetAttachment( int number, Vector &origin, QAngle &angles );
 	virtual bool			GetAttachmentVelocity( int number, Vector &originVel, Quaternion &angleVel );
 #ifdef FP
-	// >>> GESTURES
-	// forceSlot >= 0 plays into exactly that slot (retiring whatever is there) so a
-	// server-chosen channel maps 1:1; forceSlot < 0 picks the first free slot.
+	// >>> GESTURES. forceSlot >= 0 plays into exactly that slot (retiring what's there);
+	// < 0 picks the first free slot. Layer path: the sequence lives in the VM's own model.
 	int   PlayGesture(const char* seqName, float speed = 1.0f, float peak = 0.4f,
 	float speedIn = 1.0f, float speedOut = 1.0f,
 	float curve = 1.0f, float startCycle = 0.0f, bool loop = false,
 	float fadeOut = 0.0f, int forceSlot = -1);
 
-	// Spawn a source model and play a sequence FROM it; its bones transfer onto us
-	// (full reuse of the slot/envelope/cycle pipeline). Same params as PlayGesture.
+	// As PlayGesture, but spawns a source model and transfers its bones onto the VM.
 	int   PlayGestureFromModel(const char* modelName, const char* seqName,
 		float speed = 1.0f, float peak = 0.4f,
 		float speedIn = 1.0f, float speedOut = 1.0f,
 		float curve = 1.0f, float startCycle = 0.0f, bool loop = false,
 		float fadeOut = 0.0f, int forceSlot = -1);
 
-	// Resolve a gesture DEF (registry index) to a concrete play -- layer vs
-	// separate-model path, def envelope params -- and run it on this viewmodel NOW.
-	// Auto-queues the def's szNext follow-up (pullout->idle). Never networks; this
-	// is the client executor behind both the play recv proxy and PlayGestureByName.
+	// Play a registry def (layer vs separate-model, def's own params) and auto-queue its
+	// szNext follow-up. Client executor behind the networked trigger and PlayGestureByName.
 	int   PlayGestureDefIndex(unsigned short defIndex, int slot = -1);
 
-	// Look up a gesture def by name and play it locally; returns the slot (or -1).
-	// Client-direct "local cosmetic" path -- never networks. slot < 0 picks the first
-	// free slot; STORE the return if you need to stop/address it later (don't assume
-	// a fixed channel).
+	// Look up a def by name and play it locally (never networks); returns the slot (or -1).
 	int   PlayGestureLocal(const char* pszGestureName, int slot = -1);
 
-	// Queue ONE follow-up sequence on a live slot's SAME source model. When the
-	// current one-shot finishes, the slot re-points to this sequence in place
-	// (no model respawn, no fade dip) instead of retiring. One-deep: a queued
-	// advance clears the queue, so re-queue each step of a longer chain.
+	// Queue one follow-up sequence on a live slot's same source model; when the current
+	// one-shot finishes the slot repoints to it in place. One-deep -- re-queue for chains.
 	void  QueueGestureNext(int slot, const char* seqName, bool loop = false);
 
 	bool  IsGestureActive(int slot) const;
 
-	// Separate-model gesture's live source renderable for a slot (NULL for the layer
-	// path or an empty slot). Lets callers read its attachment points -- e.g. the
-	// held flashlight reads GetAttachment("light") off it to drive the beam.
+	// A slot's live source renderable (NULL for the layer path / empty slot). Lets the held
+	// flashlight read GetAttachment("light") off it to place the beam.
 	C_BaseAnimating* GetGestureSourceModel(int slot) const;
 
-	// Recv-proxy hooks: a networked gesture trigger changed -> run the client call.
-	void  OnGesturePlayParityChanged(void);   // play m_iGesturePlayDef into m_iGesturePlaySlot
-	void  OnGestureStopParityChanged(void);    // stop m_iGestureStopSlot (<0 = all)
+	// Client side of the networked play/stop triggers (run from OnDataChanged).
+	void  OnGesturePlayParityChanged(void);
+	void  OnGestureStopParityChanged(void);
 
 private:
-	void  RetireGesture(int slot);   // deactivates + removes a source model if present
-	bool  RepointGesture(int slot, const char* seqName, bool loop, float now);  // in-place swap on the same model; restarts cycle, preserves weight
-	bool  AdvanceGestureToNext(int slot, float now);  // consume the queued nextSeq via RepointGesture; false if none/bad
+	void  RetireGesture(int slot);   // deactivate + remove the source model
+	bool  RepointGesture(int slot, const char* seqName, bool loop, float now);  // in-place swap, same model
+	bool  AdvanceGestureToNext(int slot, float now);  // consume the queued nextSeq
 	void  ApplyGestureFromModel(C_BaseAnimating* pSource, int seq, float cycle,
 		float weight, float currentTime, Vector pos[], Quaternion q[]);
 
@@ -306,10 +290,8 @@ private:
 	CNetworkVar( int, m_nAnimationParity );
 
 #ifdef FP
-	// GESTURES: server->client triggers. Each is a payload + a parity; bumping the
-	// parity (even with the same payload) re-fires on the client, same idea as
-	// m_nAnimationParity. Cosmetic only -- never put these in a prediction table.
-	// Payload is sent BEFORE its parity so it's current when the parity proxy runs.
+	// GESTURES: server->client triggers. Payload + a parity; bumping the parity re-fires on
+	// the client (like m_nAnimationParity). Cosmetic -- never put these in a prediction table.
 	CNetworkVar( int, m_iGesturePlayDef );    // registry def index to play
 	CNetworkVar( int, m_iGesturePlaySlot );   // slot/channel to play it into
 	CNetworkVar( int, m_nGesturePlayParity );
