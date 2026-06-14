@@ -309,6 +309,11 @@ public:
 	int					FlashlightIsOn( void );
 	void				FlashlightTurnOn( void );
 	void				FlashlightTurnOff( void );
+#ifdef FP
+	// Re-arms the handheld flashlight after a save restore (its gesture is client-only
+	// and isn't saved). Deferred a beat so the client has recreated the viewmodel.
+	void				RedoHeldFlashlightThink( void );
+#endif
 	bool				IsIlluminatedByFlashlight( CBaseEntity *pEntity, float *flReturnDot );
 	void				SetFlashlightPowerDrainScale( float flScale ) { m_flFlashlightPowerDrainScale = flScale; }
 
@@ -442,6 +447,13 @@ private:
 	EHANDLE				m_hPlayerProxy;
 
 	bool				m_bFlashlightDisabled;
+#ifdef FP
+	// Held-flashlight toggle gate (the light lags the keypress because it's deferred to the
+	// gesture's anim event). m_bHeldFlashlightWantOn is the state we're transitioning toward;
+	// the toggle is ignored until EF_DIMLIGHT matches it or m_flHeldFlashlightLockUntil expires.
+	bool				m_bHeldFlashlightWantOn;
+	float				m_flHeldFlashlightLockUntil;
+#endif
 	bool				m_bUseCappedPhysicsDamageTable;
 	
 	float				m_flArmorReductionTime;

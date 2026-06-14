@@ -36,6 +36,15 @@ public:
     // areas (or vice versa) because our bone-derived position is somewhere
     // weird relative to the parent's actual mesh.
     virtual bool OnInternalDrawModel(ClientModelRenderInfo_t* pInfo) OVERRIDE;
+
+#ifdef FP
+    // As a gesture source: route the gesture anim event to the owning weapon.
+    virtual void FireEvent(const Vector& origin, const QAngle& angles, int event, const char* options) OVERRIDE;
+
+    // Deferred self-removal: CBaseViewModel::RetireGesture schedules this so it doesn't
+    // delete us mid view-model-render-walk (which would crash). See the .cpp.
+    virtual void ClientThink() OVERRIDE;
+#endif
 };
 
 #endif // CLIENT_DLL

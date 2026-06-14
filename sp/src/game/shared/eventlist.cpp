@@ -261,4 +261,9 @@ void EventList_RegisterSharedEvents( void )
 	REGISTER_SHARED_ANIMEVENT( AE_VSCRIPT_RUN, AE_TYPE_CLIENT | AE_TYPE_SERVER );
 	REGISTER_SHARED_ANIMEVENT( AE_VSCRIPT_RUN_FILE, AE_TYPE_CLIENT | AE_TYPE_SERVER );
 #endif
+
+#ifdef FP
+	// Client+server: the client fires it on the gesture, then forwards it to run server gameplay.
+	REGISTER_SHARED_ANIMEVENT( AE_VM_GESTURE_EVENT, AE_TYPE_CLIENT | AE_TYPE_SERVER );
+#endif
 }

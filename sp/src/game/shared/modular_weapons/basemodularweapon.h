@@ -67,6 +67,30 @@ public:
 
     virtual bool  IsBaseModularWeapon(void) const { return true; }
 
+#ifdef FP
+    // Viewmodel gesture passthrough to the owner's viewmodel front door. 'slot' is the
+    // channel you play into, so you can stop/replace it.
+    void  PlayGesture(const char* pszGestureName, int slot = 0);
+    void  StopGesture(int slot);
+    void  StopAllGestures(void);
+
+    // Handheld flashlight. Opt-in per weapon (with no gun-mounted ATTACHMENT_FLASHLIGHT):
+    // returning true makes the flashlight toggle pull out a handheld flashlight gesture.
+    virtual bool        AllowsHeldFlashlight(void) const { return false; }
+    virtual const char* GetHeldFlashlightGesture(void) const { return "held_flashlight"; }
+    virtual const char* GetHeldFlashlightPulldownGesture(void) const { return "held_flashlight_pulldown"; }
+
+    // A gesture anim event ('options' is the action, e.g. "flashlight_on"). The server half
+    // flips the owner's EF_DIMLIGHT so the light turns on/off at the animation's click frame.
+    void                OnGestureEvent(const char* options);
+
+#ifdef CLIENT_DLL
+    // Beam origin for the player flashlight: the "light" attachment of the gun-mounted
+    // flashlight prop if equipped, else any active gesture source's.
+    bool                GetFlashlightLightTransform(Vector& origin, QAngle& angles);
+#endif
+#endif // FP
+
     virtual char const* GetShootSound(int iIndex) const;
     virtual float       GetDamage(void);
 

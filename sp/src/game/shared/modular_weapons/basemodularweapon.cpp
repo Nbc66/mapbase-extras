@@ -10,6 +10,11 @@
 #include "ammodef.h"
 #include "in_buttons.h"
 
+#ifdef FP
+#include "baseviewmodel_shared.h"      // gesture passthrough -> viewmodel front door
+#include "gestures/gesture_def.h"      // CGestureRegistry::PrecacheAll
+#endif // FP
+
 #ifdef FP_SERVER
 #include "hl2_player.h"
 #endif // FP_SERVER
@@ -148,7 +153,114 @@ void CBaseModularWeapon::Precache(void)
     // PrecacheScriptSound no-op when the asset is already cached, so the
     // duplicate calls across multiple weapon spawns are effectively free.
     CAttachmentDefRegistry::Instance().PrecacheAll();
+
+#ifdef FP
+    // Gesture source models must be precached up front, same as attachments.
+    CGestureRegistry::Instance().PrecacheAll();
+#endif // FP
 }
+
+#ifdef FP
+// Gesture passthrough: forward to the owner's viewmodel front door.
+void CBaseModularWeapon::PlayGesture(const char* pszGestureName, int slot)
+{
+    CBasePlayer* pPlayer = ToBasePlayer(GetOwner());
+    if (!pPlayer)
+        return;
+    CBaseViewModel* pVM = pPlayer->GetViewModel();
+    if (pVM)
+        pVM->PlayGestureByName(pszGestureName, slot);
+}
+
+void CBaseModularWeapon::StopGesture(int slot)
+{
+    CBasePlayer* pPlayer = ToBasePlayer(GetOwner());
+    if (!pPlayer)
+        return;
+    CBaseViewModel* pVM = pPlayer->GetViewModel();
+    if (pVM)
+        pVM->StopGesture(slot);
+}
+
+void CBaseModularWeapon::StopAllGestures(void)
+{
+    CBasePlayer* pPlayer = ToBasePlayer(GetOwner());
+    if (!pPlayer)
+        return;
+    CBaseViewModel* pVM = pPlayer->GetViewModel();
+    if (pVM)
+        pVM->StopAllGestures();
+}
+
+// A gesture anim event. The gesture is client-only, so the client forwards the event to
+// the server, where it can drive gameplay (the handheld flashlight defers EF_DIMLIGHT to
+// here, so the beam clicks on at the animation frame instead of the keypress).
+void CBaseModularWeapon::OnGestureEvent(const char* options)
+{
+    if (!options || !*options)
+        return;
+
+#ifdef CLIENT_DLL
+    if ( engine )
+        engine->ServerCmd( VarArgs( "vm_gesture_event \"%s\"\n", options ) );
+#else
+    CBaseEntity *pOwner = GetOwner();
+    if ( !pOwner )
+        return;
+
+    if ( !Q_stricmp( options, "flashlight_on" ) )
+        pOwner->AddEffects( EF_DIMLIGHT );
+    else if ( !Q_stricmp( options, "flashlight_off" ) )
+        pOwner->RemoveEffects( EF_DIMLIGHT );
+#endif
+}
+
+#ifdef GAME_DLL
+// Runs a client-forwarded gesture anim event through the issuing player's active weapon.
+CON_COMMAND( vm_gesture_event, "Internal: client-forwarded viewmodel gesture anim event." )
+{
+    CBasePlayer* pPlayer = ToBasePlayer( UTIL_GetCommandClient() );
+    if ( !pPlayer || args.ArgC() < 2 )
+        return;
+
+    CBaseModularWeapon* pWeapon = ToModularWeapon( pPlayer->GetActiveWeapon() );
+    if ( pWeapon )
+        pWeapon->OnGestureEvent( args.Arg( 1 ) );
+}
+#endif // GAME_DLL
+
+#ifdef CLIENT_DLL
+bool CBaseModularWeapon::GetFlashlightLightTransform(Vector& origin, QAngle& angles)
+{
+    // 1) Gun-mounted flashlight prop -- highest priority.
+    C_AttachmentRenderable* pProp = m_hClientAttachments[ATTACHMENT_FLASHLIGHT].Get();
+    if (pProp)
+    {
+        int a = pProp->LookupAttachment("light");
+        if (a > 0 && pProp->GetAttachment(a, origin, angles))
+            return true;
+    }
+
+    // 2) Any active gesture source carrying a "light" attachment (the handheld flashlight).
+    C_BasePlayer* pOwner = ToBasePlayer(GetOwner());
+    C_BaseViewModel* pVM = pOwner ? pOwner->GetViewModel() : NULL;
+    if (pVM)
+    {
+        for (int i = 0; i < MAX_VM_GESTURES; ++i)
+        {
+            C_BaseAnimating* pSrc = pVM->GetGestureSourceModel(i);
+            if (!pSrc)
+                continue;
+            int a = pSrc->LookupAttachment("light");
+            if (a > 0 && pSrc->GetAttachment(a, origin, angles))
+                return true;
+        }
+    }
+
+    return false;   // caller falls back to the eye (plain suit flashlight)
+}
+#endif // CLIENT_DLL
+#endif // FP
 
 // ---------------------------------------------------------------------------
 // Slot accessors

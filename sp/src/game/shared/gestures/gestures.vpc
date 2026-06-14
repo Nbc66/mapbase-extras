@@ -1,0 +1,16 @@
+$Macro GESTUREDIR "$SRCDIR\game\shared\gestures"
+
+$Project
+{
+	$Folder "Source Files"
+	{
+		$Folder "FRACTURE DLL"
+		{
+			$Folder "Gestures"
+			{
+				$File "$GESTUREDIR\gesture_def.h"
+				$File "$GESTUREDIR\gesture_def.cpp"
+			}
+		}
+	}
+}

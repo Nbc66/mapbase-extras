@@ -30,6 +30,8 @@ public:
 	virtual void	Operator_ForceNPCFire(CBaseCombatCharacter* pOperator, bool bSecondary);
 #endif
 
+	virtual bool    AllowsHeldFlashlight(void) const { return true; }
+
 	virtual void	UpdatePenaltyTime(void);
 
 	virtual int		CapabilitiesGet(void) { return bits_CAP_WEAPON_RANGE_ATTACK1; }

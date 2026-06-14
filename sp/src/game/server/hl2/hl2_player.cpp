@@ -8,6 +8,9 @@
 #include "hl2_player.h"
 #include "globalstate.h"
 #include "game.h"
+#ifdef FP
+#include "modular_weapons/basemodularweapon.h"   // held-flashlight gesture trigger
+#endif
 #include "gamerules.h"
 #include "trains.h"
 #include "basehlcombatweapon_shared.h"
@@ -558,6 +561,10 @@ BEGIN_DATADESC( CHL2_Player )
 	DEFINE_FIELD( m_flNextFlashlightCheckTime, FIELD_TIME ),
 	DEFINE_FIELD( m_flFlashlightPowerDrainScale, FIELD_FLOAT ),
 	DEFINE_FIELD( m_bFlashlightDisabled, FIELD_BOOLEAN ),
+#ifdef FP
+	// Registered so the OnRestore re-arm think survives save/restore (else SetContextThink asserts).
+	DEFINE_THINKFUNC( RedoHeldFlashlightThink ),
+#endif
 
 	DEFINE_FIELD( m_bUseCappedPhysicsDamageTable, FIELD_BOOLEAN ),
 
@@ -651,6 +658,11 @@ CHL2_Player::CHL2_Player()
 
 	m_flArmorReductionTime = 0.0f;
 	m_iArmorReductionFrom = 0;
+
+#ifdef FP
+	m_bHeldFlashlightWantOn = false;
+	m_flHeldFlashlightLockUntil = 0.0f;
+#endif
 
 #ifdef MAPBASE
 	m_nProtagonistIndex = -1;
@@ -2627,6 +2639,12 @@ int CHL2_Player::FlashlightIsOn( void )
 	return IsEffectActive( EF_DIMLIGHT );
 }
 
+#ifdef FP
+// Safety cap for the held-flashlight toggle gate (the gate normally releases as soon as
+// EF_DIMLIGHT settles). Keep it longer than any pullout/pulldown.
+#define HELD_FLASHLIGHT_TOGGLE_LOCK 2.0f
+#endif
+
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
@@ -2643,6 +2661,27 @@ void CHL2_Player::FlashlightTurnOn( void )
 #ifdef HL2_DLL
 	if( !IsSuitEquipped() )
 		return;
+#endif
+
+#ifdef FP
+	// Handheld flashlight (weapon opts in, no gun-mounted flashlight attachment). The light
+	// is deferred to the gesture's "flashlight_on" anim event, so it clicks on at the
+	// animation frame, not the keypress.
+	CBaseModularWeapon *pModWeap = ToModularWeapon( GetActiveWeapon() );
+	if ( pModWeap && pModWeap->AllowsHeldFlashlight() && !pModWeap->HasAttachmentInSlot( ATTACHMENT_FLASHLIGHT ) )
+	{
+		// Ignore the toggle while a transition is in flight (EF_DIMLIGHT lags the keypress),
+		// else spamming the key keeps restarting the pullout. Release once the light settles
+		// to our intent, or the safety cap expires.
+		if ( IsEffectActive( EF_DIMLIGHT ) != m_bHeldFlashlightWantOn
+			&& gpGlobals->curtime < m_flHeldFlashlightLockUntil )
+			return;
+
+		m_bHeldFlashlightWantOn     = true;
+		m_flHeldFlashlightLockUntil = gpGlobals->curtime + HELD_FLASHLIGHT_TOGGLE_LOCK;
+		pModWeap->PlayGesture( pModWeap->GetHeldFlashlightGesture(), 0 );
+		return;
+	}
 #endif
 
 	AddEffects( EF_DIMLIGHT );
@@ -2663,6 +2702,24 @@ void CHL2_Player::FlashlightTurnOff( void )
 		if( !SuitPower_RemoveDevice( SuitDeviceFlashlight ) )
 			return;
 	}
+
+#ifdef FP
+	// Put the handheld flashlight away (pulldown gesture); the light-off is deferred to its
+	// "flashlight_off" anim event, so the beam clicks off mid-pulldown, not at the keypress.
+	CBaseModularWeapon *pModWeap = ToModularWeapon( GetActiveWeapon() );
+	if ( pModWeap && pModWeap->AllowsHeldFlashlight() && !pModWeap->HasAttachmentInSlot( ATTACHMENT_FLASHLIGHT ) )
+	{
+		// Gate, mirror of FlashlightTurnOn: ignore spam while the transition is in flight.
+		if ( IsEffectActive( EF_DIMLIGHT ) != m_bHeldFlashlightWantOn
+			&& gpGlobals->curtime < m_flHeldFlashlightLockUntil )
+			return;
+
+		m_bHeldFlashlightWantOn     = false;
+		m_flHeldFlashlightLockUntil = gpGlobals->curtime + HELD_FLASHLIGHT_TOGGLE_LOCK;
+		pModWeap->PlayGesture( pModWeap->GetHeldFlashlightPulldownGesture(), 0 );
+		return;
+	}
+#endif
 
 	RemoveEffects( EF_DIMLIGHT );
 	EmitSound( "HL2Player.FlashLightOff" );
@@ -4048,12 +4105,39 @@ void CHL2_Player::UpdateClientData( void )
 
 //---------------------------------------------------------
 //---------------------------------------------------------
+#ifdef FP
+// Deferred re-arm of the handheld flashlight after a save restore (see OnRestore): replay
+// the pullout, unless it was turned on some other way during the deferral.
+void CHL2_Player::RedoHeldFlashlightThink( void )
+{
+	if ( !FlashlightIsOn() )
+		FlashlightTurnOn();
+}
+#endif // FP
+
 void CHL2_Player::OnRestore()
 {
 	BaseClass::OnRestore();
 
 #ifdef FP
 	m_AttachmentInventory.OnRestore();
+
+	// The handheld flashlight's gesture is client-only and isn't saved, so on load
+	// EF_DIMLIGHT comes back on with no gesture behind it. Turn it cleanly off and redo the
+	// pullout a beat later, once the client has recreated the viewmodel (so the re-trigger's
+	// parity change is seen). Gun-mounted and plain suit flashlights restore fine.
+	if ( FlashlightIsOn() )
+	{
+		CBaseModularWeapon *pModWeap = ToModularWeapon( GetActiveWeapon() );
+		if ( pModWeap && pModWeap->AllowsHeldFlashlight() && !pModWeap->HasAttachmentInSlot( ATTACHMENT_FLASHLIGHT ) )
+		{
+			RemoveEffects( EF_DIMLIGHT );
+			if ( Flashlight_UseLegacyVersion() )
+				SuitPower_RemoveDevice( SuitDeviceFlashlight );
+
+			SetContextThink( &CHL2_Player::RedoHeldFlashlightThink, gpGlobals->curtime + 0.5f, "RedoHeldFlashlight" );
+		}
+	}
 #endif // FP
 
 	m_pPlayerAISquad = g_AI_SquadManager.FindCreateSquad(AllocPooledString(PLAYER_SQUADNAME));

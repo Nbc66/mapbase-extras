@@ -28,6 +28,37 @@ class CVGuiScreen;
 
 #define VIEWMODEL_INDEX_BITS 1
 
+// GESTURES: VManip-style viewmodel gesture layers (client-only, cosmetic)
+#ifdef FP
+#define MAX_VM_GESTURES 4   // shared: the server addresses gesture slots by this too
+#endif
+
+#if defined( CLIENT_DLL )
+struct vmgesture_t
+{
+	C_BaseAnimating *pSource;   // NULL = sequence is in the VM's own model (layer path).
+	                            // non-NULL = evaluate this model, transfer bones (VManip path).
+	int   sequence;     // index into pSource's model if pSource set, else the VM's model
+	int   modelIndex;   // (local gestures only) VM model the index is valid for
+	float startTime;       // weight-envelope clock (ramp-in); stamped at play time
+	float startCycle;
+	float cycleStartTime;  // cycle clock; kept separate from startTime so a queued
+	                       // advance can restart the cycle without re-ramping the
+	                       // weight (avoids a fade dip when chaining pullout->idle)
+	float speed;
+	float peakOffset;
+	float speedIn;
+	float speedOut;
+	float curve;
+	float fadeOutDur;     // end-fade ramp length (s); 0 = snap on retire (legacy)
+	float fadeOutStart;   // time the end-fade began; <0 = not fading yet
+	bool  loop;
+	bool  active;
+	char  nextSeq[64];   // empty = nothing queued -> retire (remove model)
+	bool  nextLoop;
+};
+#endif
+
 class CBaseViewModel : public CBaseAnimating, public IHasOwner
 {
 	DECLARE_CLASS( CBaseViewModel, CBaseAnimating );
@@ -83,6 +114,14 @@ public:
 
 #ifdef FP
 	void		CalcIronsights(Vector& pos, QAngle& ang);
+
+	// GESTURES front door, callable from server or client. Gestures run on the client, so
+	// on the server these net a parity-tagged trigger; on the client they run directly.
+	// 'slot' is the channel (server picks, client honors) so you can stop/replace it later;
+	// a held item's pullout->idle chain lives in the def (szNext), so one play is enough.
+	void		PlayGestureByName(const char* pszGestureName, int slot = 0);
+	void		StopGesture(int slot);      // retire one slot
+	void		StopAllGestures(void);      // retire every slot
 #endif // FP
 
 	virtual bool			IsSelfAnimating()
@@ -182,6 +221,55 @@ public:
 	virtual bool			GetAttachment( int number, Vector &origin );
 	virtual	bool			GetAttachment( int number, Vector &origin, QAngle &angles );
 	virtual bool			GetAttachmentVelocity( int number, Vector &originVel, Quaternion &angleVel );
+#ifdef FP
+	// >>> GESTURES. forceSlot >= 0 plays into exactly that slot (retiring what's there);
+	// < 0 picks the first free slot. Layer path: the sequence lives in the VM's own model.
+	int   PlayGesture(const char* seqName, float speed = 1.0f, float peak = 0.4f,
+	float speedIn = 1.0f, float speedOut = 1.0f,
+	float curve = 1.0f, float startCycle = 0.0f, bool loop = false,
+	float fadeOut = 0.0f, int forceSlot = -1);
+
+	// As PlayGesture, but spawns a source model and transfers its bones onto the VM.
+	int   PlayGestureFromModel(const char* modelName, const char* seqName,
+		float speed = 1.0f, float peak = 0.4f,
+		float speedIn = 1.0f, float speedOut = 1.0f,
+		float curve = 1.0f, float startCycle = 0.0f, bool loop = false,
+		float fadeOut = 0.0f, int forceSlot = -1);
+
+	// Play a registry def (layer vs separate-model, def's own params) and auto-queue its
+	// szNext follow-up. Client executor behind the networked trigger and PlayGestureByName.
+	int   PlayGestureDefIndex(unsigned short defIndex, int slot = -1);
+
+	// Look up a def by name and play it locally (never networks); returns the slot (or -1).
+	int   PlayGestureLocal(const char* pszGestureName, int slot = -1);
+
+	// Queue one follow-up sequence on a live slot's same source model; when the current
+	// one-shot finishes the slot repoints to it in place. One-deep -- re-queue for chains.
+	void  QueueGestureNext(int slot, const char* seqName, bool loop = false);
+
+	bool  IsGestureActive(int slot) const;
+
+	// A slot's live source renderable (NULL for the layer path / empty slot). Lets the held
+	// flashlight read GetAttachment("light") off it to place the beam.
+	C_BaseAnimating* GetGestureSourceModel(int slot) const;
+
+	// Client side of the networked play/stop triggers (run from OnDataChanged).
+	void  OnGesturePlayParityChanged(void);
+	void  OnGestureStopParityChanged(void);
+
+private:
+	void  RetireGesture(int slot);   // deactivate + remove the source model
+	bool  RepointGesture(int slot, const char* seqName, bool loop, float now);  // in-place swap, same model
+	bool  AdvanceGestureToNext(int slot, float now);  // consume the queued nextSeq
+	void  ApplyGestureFromModel(C_BaseAnimating* pSource, int seq, float cycle,
+		float weight, float currentTime, Vector pos[], Quaternion q[]);
+
+protected:
+	virtual void StandardBlendingRules(CStudioHdr* hdr, Vector pos[], Quaternion q[],
+	float currentTime, int boneMask);
+	float ComputeGestureWeight(const vmgesture_t& g, float now);
+	float ComputeGestureCycle(const vmgesture_t& g, float now);
+#endif // FP
 #endif
 
 private:
@@ -201,12 +289,27 @@ private:
 	// Used to force restart on client, only needs a few bits
 	CNetworkVar( int, m_nAnimationParity );
 
+#ifdef FP
+	// GESTURES: server->client triggers. Payload + a parity; bumping the parity re-fires on
+	// the client (like m_nAnimationParity). Cosmetic -- never put these in a prediction table.
+	CNetworkVar( int, m_iGesturePlayDef );    // registry def index to play
+	CNetworkVar( int, m_iGesturePlaySlot );   // slot/channel to play it into
+	CNetworkVar( int, m_nGesturePlayParity );
+	CNetworkVar( int, m_iGestureStopSlot );   // slot to retire; <0 = stop all
+	CNetworkVar( int, m_nGestureStopParity );
+#endif // FP
+
 	// Weapon art
 	string_t				m_sVMName;			// View model of this weapon
 	string_t				m_sAnimationPrefix;		// Prefix of the animations that should be used by the player carrying this weapon
 
 #if defined( CLIENT_DLL )
 	int						m_nOldAnimationParity;
+#ifdef FP
+	vmgesture_t				m_Gestures[MAX_VM_GESTURES];
+	int						m_nOldGesturePlayParity;   // last-handled play trigger (see OnDataChanged)
+	int						m_nOldGestureStopParity;   // last-handled stop trigger
+#endif // FP
 #endif
 
 

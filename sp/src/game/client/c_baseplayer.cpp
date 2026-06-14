@@ -8,6 +8,9 @@
 #include "cbase.h"
 #include "c_baseplayer.h"
 #include "flashlighteffect.h"
+#ifdef FP
+#include "modular_weapons/basemodularweapon.h"   // flashlight beam follows the weapon/attachment
+#endif
 #include "weapon_selection.h"
 #include "history_resource.h"
 #include "iinput.h"
@@ -1327,11 +1330,31 @@ void C_BasePlayer::UpdateFlashlight()
 			m_pFlashlight->TurnOn();
 		}
 
-		Vector vecForward, vecRight, vecUp;
-		EyeVectors( &vecForward, &vecRight, &vecUp );
+		Vector vecForward, vecRight, vecUp, vecPos;
+		bool bFromWeapon = false;
+#ifdef FP
+		// If the active modular weapon has a flashlight source (gun-mounted attachment
+		// or a handheld flashlight gesture), originate the beam from its "light"
+		// attachment point instead of the eye.
+		C_BaseModularWeapon* pModWeap = ToModularWeapon( GetActiveWeapon() );
+		if ( pModWeap )
+		{
+			QAngle angLight;
+			if ( pModWeap->GetFlashlightLightTransform( vecPos, angLight ) )
+			{
+				AngleVectors( angLight, &vecForward, &vecRight, &vecUp );
+				bFromWeapon = true;
+			}
+		}
+#endif
+		if ( !bFromWeapon )
+		{
+			EyeVectors( &vecForward, &vecRight, &vecUp );
+			vecPos = EyePosition();
+		}
 
-		// Update the light with the new position and direction.		
-		m_pFlashlight->UpdateLight( EyePosition(), vecForward, vecRight, vecUp, FLASHLIGHT_DISTANCE );
+		// Update the light with the new position and direction.
+		m_pFlashlight->UpdateLight( vecPos, vecForward, vecRight, vecUp, FLASHLIGHT_DISTANCE );
 	}
 	else if (m_pFlashlight)
 	{

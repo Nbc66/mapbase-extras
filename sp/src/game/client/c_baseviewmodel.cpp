@@ -452,6 +452,30 @@ void C_BaseViewModel::OnDataChanged( DataUpdateType_t updateType )
 {
 	SetPredictionEligible( true );
 	BaseClass::OnDataChanged(updateType);
+
+#ifdef FP
+	// GESTURES: act on the server's play/stop parity triggers here, not in a recv proxy --
+	// proxies run with abs queries disabled, and spawning a gesture source there asserts.
+	// Sync on create so a stale parity doesn't replay on spawn.
+	if ( updateType == DATA_UPDATE_CREATED )
+	{
+		m_nOldGesturePlayParity = m_nGesturePlayParity;
+		m_nOldGestureStopParity = m_nGestureStopParity;
+	}
+	else
+	{
+		if ( m_nGesturePlayParity != m_nOldGesturePlayParity )
+		{
+			m_nOldGesturePlayParity = m_nGesturePlayParity;
+			OnGesturePlayParityChanged();
+		}
+		if ( m_nGestureStopParity != m_nOldGestureStopParity )
+		{
+			m_nOldGestureStopParity = m_nGestureStopParity;
+			OnGestureStopParityChanged();
+		}
+	}
+#endif // FP
 }
 
 void C_BaseViewModel::PostDataUpdate( DataUpdateType_t updateType )
