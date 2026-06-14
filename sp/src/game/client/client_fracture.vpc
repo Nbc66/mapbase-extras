@@ -19,9 +19,7 @@ $Configuration
 		$AdditionalIncludeDirectories	".\hl2;.\hl2\elements;$SRCDIR\game\shared\hl2;$SRCDIR\game\shared\episodic;$SRCDIR\game\shared\modular_weapons;..\..\public;$BASE"
 		$PreprocessorDefinitions		"$BASE;HL2_CLIENT_DLL;HL2_EPISODIC"
 		$PreprocessorDefinitions		"$BASE;FP_CLIENT;FP"
-		//Use c++ 17 for now it will not show as being used in the project c++ lang setting in vs
-		//but it will compile using the c++17 standard
-		$AdditionalOptions				"$BASE /std:c++17"
+		// C++17 is now set globally for all projects in source_win32_base.vpc.
 		//warning C5033: register keyword deprication ignore this
 		$DisableSpecificWarnings		"$BASE;5033"
 	}

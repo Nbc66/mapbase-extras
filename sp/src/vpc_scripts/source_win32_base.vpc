@@ -11,14 +11,15 @@ $Configuration
 	$General
 	{
 		// Request a specific compiler toolset.
-		$PlatformToolset "v110_xp" [$VS2012 && !$ANALYZE && !($VS2015||$VS2017||$VS2019||$VS2022)] // VS 2012 targeting Windows XP - http://msdn.microsoft.com/en-us/library/vstudio/jj851139.aspx
-		$PlatformToolset "v110" [$VS2012 && $ANALYZE && !($VS2015||$VS2017||$VS2019||$VS2022)] // VS 2012 for /analyze
-		$PlatformToolset "v120_xp" [$VS2013 && !$ANALYZE && !($VS2015||$VS2017||$VS2019||$VS2022)] // VS 2013 targeting Windows XP - http://msdn.microsoft.com/en-us/library/vstudio/jj851139.aspx
-		$PlatformToolset "v120" [$VS2013 && $ANALYZE && !($VS2015||$VS2017||$VS2019||$VS2022)] // VS 2013 for /analyze
+		$PlatformToolset "v110_xp" [$VS2012 && !$ANALYZE && !($VS2015||$VS2017||$VS2019||$VS2022||$VS2026)] // VS 2012 targeting Windows XP - http://msdn.microsoft.com/en-us/library/vstudio/jj851139.aspx
+		$PlatformToolset "v110" [$VS2012 && $ANALYZE && !($VS2015||$VS2017||$VS2019||$VS2022||$VS2026)] // VS 2012 for /analyze
+		$PlatformToolset "v120_xp" [$VS2013 && !$ANALYZE && !($VS2015||$VS2017||$VS2019||$VS2022||$VS2026)] // VS 2013 targeting Windows XP - http://msdn.microsoft.com/en-us/library/vstudio/jj851139.aspx
+		$PlatformToolset "v120" [$VS2013 && $ANALYZE && !($VS2015||$VS2017||$VS2019||$VS2022||$VS2026)] // VS 2013 for /analyze
 		$PlatformToolset "v140" [$VS2015] // VS 2015
 		$PlatformToolset "v141" [$VS2017] // VS 2017
 		$PlatformToolset "v142" [$VS2019] // VS 2019
 		$PlatformToolset "v143" [$VS2022] // VS 2022
+		$PlatformToolset "v145" [$VS2026] // VS 2026
 	}
 
 	$General
@@ -41,7 +42,8 @@ $Configuration
 		
 		// warning C4838: conversion requires a narrowing conversion
 		// warning C4456-4459: variable shadowing. TODO: fix those!
-		$DisableSpecificWarnings	"$BASE;4316;4838;4456;4457;4458;4459" [($VS2015||$VS2017||$VS2019||$VS2022)]
+		// warning C5033: register keyword is not used anymore
+		$DisableSpecificWarnings	"$BASE;4316;4838;4456;4457;4458;4459;5033" [($VS2015||$VS2017||$VS2019||$VS2022||$VS2026)]
 
 		// Having lots of warnings makes it harder to notice new, and possibly
 		// important warnings, both on buildbot and in the output window. Lots
@@ -61,5 +63,10 @@ $Configuration
 		// effect. This option does not show up in the IDE so we need to add it in $AdditionalOptions.
 		// http://blogs.msdn.com/b/vcblog/archive/2013/09/11/introducing-gw-compiler-switch.aspx
 		$AdditionalOptions	"$BASE /Gw" [$VS2013]
+
+		// Compile every project against the C++17 standard. Set here (not per
+		// project) so all DLLs, EXEs and static libs share one standard.
+		// Gated to toolsets that support /std:c++17 (v140/VS2015 does not).
+		$LanguageStandard	"ISO C++17 Standard (/std:c++17)" [$VS2017||$VS2019||$VS2022||$VS2026]
 	}
 }
