@@ -30,6 +30,11 @@ enum RenderParamVector_t
 
 	VECTOR_RENDERPARM_WIND_DIRECTION,
 
+	// Fracture CSM: per-cascade world->shadow-texture matrix rows (row.xyz only; row.w
+	// is carried in the float render params below because Vector is 3-wide). Base index;
+	// occupies [BASE .. BASE+8] for 3 cascades x 3 rows = indices 11..19.
+	VECTOR_RENDERPARM_CSM_MATRIX_ROW_BASE,
+
 	MAX_VECTOR_RENDER_PARMS = 20
 };
 
@@ -57,6 +62,10 @@ enum RenderParamInt_t
 	INT_FLASHLIGHT_DEPTHTEXTURE_FALLBACK_FIRST,
 	INT_FLASHLIGHT_DEPTHTEXTURE_FALLBACK_LAST = INT_FLASHLIGHT_DEPTHTEXTURE_FALLBACK_FIRST + 4,
 
+	// Fracture CSM: sun-shadow cascade depth textures (ITexture* cast to int). Base index;
+	// occupies [BASE .. BASE+2] for 3 cascades = indices 17..19.
+	INT_RENDERPARM_CSM_DEPTHTEXTURE_BASE,
+
 	MAX_INT_RENDER_PARMS = 20
 };
 
@@ -80,6 +89,14 @@ enum RenderParamTexture_t
 enum RenderParamFloat_t
 {
 	FLOAT_RENDERPARM_MINIMUMLIGHTING = 0,
+
+	// Fracture CSM: w component of each cascade matrix row (pairs with
+	// VECTOR_RENDERPARM_CSM_MATRIX_ROW_BASE). Base index; occupies [BASE .. BASE+8] = 1..9.
+	FLOAT_RENDERPARM_CSM_MATRIX_ROW_W_BASE,
+
+	// Fracture CSM: shader params. [BASE+0]=strength, [+1]=fadeStart, [+2]=fadeEnd,
+	// [+3]=1/depthResolution. Occupies 10..13.
+	FLOAT_RENDERPARM_CSM_PARAMS_BASE = FLOAT_RENDERPARM_CSM_MATRIX_ROW_W_BASE + 9,
 };
 
 #endif // RENDERPARM_H

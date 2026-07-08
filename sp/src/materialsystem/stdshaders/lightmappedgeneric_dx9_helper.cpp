@@ -1051,20 +1051,21 @@ void DrawLightmappedGeneric_DX9_Internal(CBaseVSShader *pShader, IMaterialVar** 
 					pShaderShadow->EnableTexture( SHADER_SAMPLER5, true );
 				}
 
-				if( hasFlashlight && IsX360() )
-				{
-					pShaderShadow->EnableTexture( SHADER_SAMPLER13, true );
-					pShaderShadow->EnableTexture( SHADER_SAMPLER14, true );
-					pShaderShadow->SetShadowDepthFiltering( SHADER_SAMPLER14 );
-					pShaderShadow->EnableTexture( SHADER_SAMPLER15, true );
-				}
-				else if ( !hasFlashlight )
-				{
-					pShaderShadow->EnableTexture( SHADER_SAMPLER14, true );
-					pShaderShadow->SetShadowDepthFiltering( SHADER_SAMPLER14 );
-					pShaderShadow->EnableSRGBRead( SHADER_SAMPLER14, false );
-					pShaderShadow->EnableTexture( SHADER_SAMPLER15, true );
-				}
+				// Fracture CSM (PC): enable the 3 sun-shadow cascade depth samplers WITH
+				// hardware shadow-depth comparison filtering. Without SetShadowDepthFiltering,
+				// tex2Dproj returns raw depth instead of a 0/1 compare result -> the surface
+				// reads as shadowed almost everywhere. The stock main pass only set this up for
+				// s14, which is why only the middle cascade worked (and only the flashlight,
+				// which leaves the device sampler in compare mode, "helped" the others).
+				pShaderShadow->EnableTexture( SHADER_SAMPLER13, true );
+				pShaderShadow->SetShadowDepthFiltering( SHADER_SAMPLER13 );
+				pShaderShadow->EnableSRGBRead( SHADER_SAMPLER13, false );
+				pShaderShadow->EnableTexture( SHADER_SAMPLER14, true );
+				pShaderShadow->SetShadowDepthFiltering( SHADER_SAMPLER14 );
+				pShaderShadow->EnableSRGBRead( SHADER_SAMPLER14, false );
+				pShaderShadow->EnableTexture( SHADER_SAMPLER15, true );
+				pShaderShadow->SetShadowDepthFiltering( SHADER_SAMPLER15 );
+				pShaderShadow->EnableSRGBRead( SHADER_SAMPLER15, false );
 
 				if( hasVertexColor || hasBaseTexture2 || hasBump2 )
 				{
@@ -1698,6 +1699,49 @@ void DrawLightmappedGeneric_DX9_Internal(CBaseVSShader *pShader, IMaterialVar** 
 		//	
 		//	SET_DYNAMIC_PIXEL_SHADER_CMD( DynamicCmdsOut, sdk_lightmappedgeneric_ps20 );
 		//}
+
+		// Fracture CSM: bind the sun-shadow cascades for the main (non-flashlight) lit pass.
+		// The manager (CCascadeLightManager) publishes the cascade matrices + depth textures
+		// each frame through the rendering-parameter channels; reconstruct them here.
+		{
+			// c13..c20 = cascade rows 0..7 (cascade0 XYZ, cascade1 XYZ, cascade2 XY).
+			float csmRows[ 8 * 4 ];
+			for ( int idx = 0; idx < 8; ++idx )
+			{
+				Vector vRow = pShaderAPI->GetVectorRenderingParameter( VECTOR_RENDERPARM_CSM_MATRIX_ROW_BASE + idx );
+				csmRows[ idx * 4 + 0 ] = vRow.x;
+				csmRows[ idx * 4 + 1 ] = vRow.y;
+				csmRows[ idx * 4 + 2 ] = vRow.z;
+				csmRows[ idx * 4 + 3 ] = pShaderAPI->GetFloatRenderingParameter( FLOAT_RENDERPARM_CSM_MATRIX_ROW_W_BASE + idx );
+			}
+			DynamicCmdsOut.SetPixelShaderConstant( 13, csmRows, 8 );
+
+			// c26 = cascade2 row Z (row index 8).
+			Vector vRow8 = pShaderAPI->GetVectorRenderingParameter( VECTOR_RENDERPARM_CSM_MATRIX_ROW_BASE + 8 );
+			float csmRow8[4] = { vRow8.x, vRow8.y, vRow8.z, pShaderAPI->GetFloatRenderingParameter( FLOAT_RENDERPARM_CSM_MATRIX_ROW_W_BASE + 8 ) };
+			DynamicCmdsOut.SetPixelShaderConstant( 26, csmRow8, 1 );
+
+			// c27 = params ( strength, fadeStart, fadeEnd, 1/res ).
+			float csmParams[4];
+			for ( int p = 0; p < 4; ++p )
+				csmParams[p] = pShaderAPI->GetFloatRenderingParameter( FLOAT_RENDERPARM_CSM_PARAMS_BASE + p );
+			DynamicCmdsOut.SetPixelShaderConstant( 27, csmParams, 1 );
+
+			// c28 = params2 ( zLerpBase, zLerpRange, debugTint, unused ).
+			float csmParams2[4];
+			csmParams2[0] = pShaderAPI->GetFloatRenderingParameter( FLOAT_RENDERPARM_CSM_PARAMS_BASE + 5 );	// zLerpBase
+			csmParams2[1] = pShaderAPI->GetFloatRenderingParameter( FLOAT_RENDERPARM_CSM_PARAMS_BASE + 6 );	// zLerpRange
+			csmParams2[2] = pShaderAPI->GetFloatRenderingParameter( FLOAT_RENDERPARM_CSM_PARAMS_BASE + 4 );	// debugTint
+			csmParams2[3] = 0.0f;
+			DynamicCmdsOut.SetPixelShaderConstant( 28, csmParams2, 1 );
+
+			ITexture *pCSM0 = (ITexture *)pShaderAPI->GetIntRenderingParameter( INT_RENDERPARM_CSM_DEPTHTEXTURE_BASE + 0 );
+			ITexture *pCSM1 = (ITexture *)pShaderAPI->GetIntRenderingParameter( INT_RENDERPARM_CSM_DEPTHTEXTURE_BASE + 1 );
+			ITexture *pCSM2 = (ITexture *)pShaderAPI->GetIntRenderingParameter( INT_RENDERPARM_CSM_DEPTHTEXTURE_BASE + 2 );
+			if ( pCSM0 ) pShader->BindTexture( SHADER_SAMPLER13, pCSM0, 0 );
+			if ( pCSM1 ) pShader->BindTexture( SHADER_SAMPLER14, pCSM1, 0 );
+			if ( pCSM2 ) pShader->BindTexture( SHADER_SAMPLER15, pCSM2, 0 );
+		}
 
 		if( hasFlashlight && IsX360() )
 		{

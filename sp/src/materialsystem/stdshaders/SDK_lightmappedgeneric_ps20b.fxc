@@ -47,5 +47,11 @@
 
 //  SKIP: $PARALLAXCORRECT && !$CUBEMAP
 
+// Fracture CSM sun shadows are implemented in the included lightmappedgeneric_ps2_3_x.h
+// (touch this line to force a recompile when only that .h / fracture_csm_fxc.h changed).
+// rev2: CSM sampling switched to tex2Dlod (fix X3528 branch-with-gradients).
+// rev3: back to tex2Dproj (real HW shadow compare) + no branch (sample all cascades).
+// rev4: r_csm_debug_tint runtime cvar (g_CSMDebug @ c28) replaces compile-time tint.
+// rev5: cascade blending (split lerp) + 9-tap PCF + quadratic z fade.
 #include "lightmappedgeneric_ps2_3_x.h"
 

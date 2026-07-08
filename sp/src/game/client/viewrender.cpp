@@ -82,6 +82,9 @@
 // Projective textures
 #include "C_Env_Projected_Texture.h"
 
+// Fracture CSM (cascaded shadow maps)
+#include "c_env_cascade_light.h"
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -1462,6 +1465,10 @@ void CViewRender::ViewDrawScene( bool bDrew3dSkybox, SkyboxVisibility_t nSkyboxV
 	if ( r_flashlightdepthtexture.GetBool() && (viewID == VIEW_MAIN) )
 	{
 		g_pClientShadowMgr->ComputeShadowDepthTextures( view );
+
+		// Fracture CSM: render the sun-shadow cascade depth textures alongside the
+		// flashlight shadow depths (both need the shadow-depth-texture path enabled).
+		CSM_ComputeShadowDepthTextures( view );
 #ifdef ASW_PROJECTED_TEXTURES
 		CMatRenderContextPtr pRenderContext( materials );
 #endif

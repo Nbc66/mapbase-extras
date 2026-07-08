@@ -50,6 +50,7 @@
 #include "common_ps_fxc.h"
 #include "common_flashlight_fxc.h"
 #include "common_lightmappedgeneric_fxc.h"
+#include "fracture_csm_fxc.h"
 
 #if SEAMLESS
 #define USE_FAST_PATH 1
@@ -110,10 +111,19 @@ const float4 g_TintValuesAndLightmapScale	: register( c12 );
 
 #define g_flAlpha2 g_TintValuesAndLightmapScale.w
 
-const float4 g_FlashlightAttenuationFactors	: register( c13 );
-const float3 g_FlashlightPos				: register( c14 );
-const float4x4 g_FlashlightWorldToTexture	: register( c15 ); // through c18
-const float4 g_ShadowTweaks					: register( c19 );
+// Fracture CSM: the old flashlight constant registers c13-c19 are free on PC
+// (the flashlight is a separate shader pass), so use them for the sun-shadow cascades.
+const float4 g_CSMCascade0RowX				: register( c13 );
+const float4 g_CSMCascade0RowY				: register( c14 );
+const float4 g_CSMCascade0RowZ				: register( c15 );
+const float4 g_CSMCascade1RowX				: register( c16 );
+const float4 g_CSMCascade1RowY				: register( c17 );
+const float4 g_CSMCascade1RowZ				: register( c18 );
+const float4 g_CSMCascade2RowX				: register( c19 );
+const float4 g_CSMCascade2RowY				: register( c20 );
+const float4 g_CSMCascade2RowZ				: register( c26 );
+const float4 g_CSMParams					: register( c27 ); // strength, splitLerpBase, splitLerpInvRange, 1/depthRes
+const float4 g_CSMParams2					: register( c28 ); // zLerpBase, zLerpRange, debugTint, unused
 
 #if PARALLAXCORRECT
 // Parallax cubemaps
@@ -174,11 +184,10 @@ sampler AlphaMaskSampler		: register( s11 );	// alpha
 #endif
 #endif
 
-#if defined( _X360 ) && FLASHLIGHT
-sampler FlashlightSampler		: register( s13 );
-sampler ShadowDepthSampler		: register( s14 );
-sampler RandRotSampler			: register( s15 );
-#endif
+// Fracture CSM: sun-shadow cascade depth textures (s13-s15 are free on PC).
+sampler g_CSMDepthSampler0		: register( s13 );
+sampler g_CSMDepthSampler1		: register( s14 );
+sampler g_CSMDepthSampler2		: register( s15 );
 
 struct PS_INPUT
 {
@@ -657,6 +666,14 @@ HALF4 main( PS_INPUT i ) : COLOR
 #if WRITEWATERFOGTODESTALPHA && (PIXELFOGTYPE == PIXEL_FOG_TYPE_HEIGHT)
 	alpha = fogFactor;
 #endif
+
+	// Fracture CSM: multiply-darken where the sun is dynamically occluded.
+	float flCSM = FractureCSM_ComputeShadow( i.worldPos_projPosZ.xyz, g_EyePos,
+		g_CSMCascade0RowX, g_CSMCascade0RowY, g_CSMCascade0RowZ,
+		g_CSMCascade1RowX, g_CSMCascade1RowY, g_CSMCascade1RowZ,
+		g_CSMCascade2RowX, g_CSMCascade2RowY, g_CSMCascade2RowZ,
+		g_CSMDepthSampler0, g_CSMDepthSampler1, g_CSMDepthSampler2, g_CSMParams, g_CSMParams2 );
+	result.rgb *= flCSM;
 
 	return FinalOutput( float4( result.rgb, alpha ), fogFactor, PIXELFOGTYPE, TONEMAP_SCALE_LINEAR, bWriteDepthToAlpha, i.worldPos_projPosZ.w );
 

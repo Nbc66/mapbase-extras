@@ -57,8 +57,13 @@ $Project "Client (Fracture Point)"
 				$File "$SRCDIR\game\shared\modular_weapons\basemodularweapon.cpp"
 				$File "$SRCDIR\game\shared\modular_weapons\basemodularweapon.h"
 			}
+			$Folder "CSM"
+			{
+				$File "c_env_cascade_light.cpp"
+				$File "c_env_cascade_light.h"
+			}
 		}
-	
+
 		$Folder	"HL2 DLL"
 		{
 			$File	"$SRCDIR\game\shared\hl2\basehlcombatweapon_shared.cpp"

@@ -61,7 +61,13 @@ $Project "Server (Fracture Point)"
 				$File "$SRCDIR\game\shared\modular_weapons\basemodularweapon.cpp"
 				$File "$SRCDIR\game\shared\modular_weapons\basemodularweapon.h"
 			}
-			
+
+			$Folder "CSM"
+			{
+				$File	"env_cascade_light.cpp"
+				$File	"env_cascade_light.h"
+			}
+
 			$Folder "Weapons"
 			{
 			    $File	"episodic\weapon_glock18c.cpp"
